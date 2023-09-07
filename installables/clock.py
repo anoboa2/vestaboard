@@ -74,6 +74,14 @@ DIGITS = {
 }
 
 def writeDigit(start_row, start_digit, time_value, board):
+  """
+  Writes a digit to the board
+  Params:
+    start_row: the row to start writing the digit
+    start_digit: the column to start writing the digit
+    time_value: the value of the digit to write
+    board: the board to write the digit to
+  """
   row_loc = start_row
   for row in DIGITS[str(time_value)]:
     digit_loc = start_digit
@@ -85,15 +93,22 @@ def writeDigit(start_row, start_digit, time_value, board):
   return board
 
 def displayTime():
+  """
+  Displays the current time on the Vestaboard
+  """
+  # Initialize a blank board
   board = [[0] * 22 for _ in range(6)]
 
+  # Parse the current time
   hr = time.strftime("%I")
   min = time.strftime("%M")
   sec = time.strftime("%S")
 
+  # Handle hours 10, 11, 12
   if hr[0] == "1":
     board = writeDigit(1, 0, hr[0], board)
 
+  # Write the time to the board
   board = writeDigit(1, 5, hr[1], board)
   board[2][101] = 70
   board[4][10] = 70

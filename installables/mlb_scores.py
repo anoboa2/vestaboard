@@ -227,6 +227,9 @@ TEAM_PRIORITY = [
 ]
 
 def getSchedule():
+  """
+  Gets the MLB schedule for the current day
+  """
   mlb_resp = requests.get("http://statsapi.mlb.com/api/v1/schedule/games/?sportId=1")
   if mlb_resp.status_code != 200:
     print("Error getting MLB schedule")
@@ -242,8 +245,12 @@ def getSchedule():
 
 def gamePrioritizer(schedule):
   """
-  Takes a list of games and rotates the order based on the team priority
+  Takes a list of games and rotates the order based on the team priority.
+  Params:
+    schedule: list of games
   """
+
+  # Split the games into priority and non-priority based on the hardcoded global priority list
   priority_games = []
   for game in schedule:
     if game['homeTeamId'] in TEAM_PRIORITY or game['awayTeamId'] in TEAM_PRIORITY:
@@ -254,6 +261,7 @@ def gamePrioritizer(schedule):
     if game['homeTeamId'] not in TEAM_PRIORITY and game['awayTeamId'] not in TEAM_PRIORITY:
       non_priority_games.append(game)
   
+  # Sort the priority games by the priority list and the non-priority games by the datetime
   priority_games = sorted(priority_games, key=lambda k: TEAM_PRIORITY.index(k['homeTeamId']) if k['homeTeamId'] in TEAM_PRIORITY else TEAM_PRIORITY.index(k['awayTeamId']))
   non_priority_games = sorted(non_priority_games, key=lambda k: k['datetime'])
 
@@ -261,6 +269,11 @@ def gamePrioritizer(schedule):
 
 
 def getLiveGameFeed(game_pk):
+  """
+  Gets the live feed for a game
+  Params:
+    game_pk: the game id
+  """
   mlb_resp = requests.get(f"http://statsapi.mlb.com/api/v1.1/game/{game_pk}/feed/live")
   if mlb_resp.status_code != 200:
     print("Error getting MLB feed")
@@ -268,6 +281,7 @@ def getLiveGameFeed(game_pk):
   
   data = mlb_resp.json()
 
+  # Parse data for the home and away teams
   home_team_id = data['gameData']['teams']['home']['id']
   home_team = [team for team in TEAMS if team['statcastId'] == home_team_id][0]
   home_score = data['liveData']['linescore']['teams']['home']['runs']
@@ -275,9 +289,11 @@ def getLiveGameFeed(game_pk):
   away_team = [team for team in TEAMS if team['statcastId'] == away_team_id][0]
   away_score = data['liveData']['linescore']['teams']['away']['runs']
 
+  # Parse data for the last play
   lookback = -1
   last_play = data['liveData']['plays']['allPlays'][lookback]
 
+  # Parse data for the last play
   batter = last_play['matchup']['batter']['fullName']
   batter = batter.split(" ")[-1]
   pitcher = last_play['matchup']['pitcher']['fullName']
@@ -353,7 +369,7 @@ def getLiveGameFeed(game_pk):
   # else:
   #   line_3[-4] = vb.CHARACTERS['.']
   
-
+  # assemble the full board message to send to the vestaboard device
   board = [line_1, line_2, line_3, line_4, line_5, line_6]
 
   return board, 15000

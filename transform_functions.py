@@ -1,3 +1,5 @@
+# These are some standard configurations to be used to transform 
+# data into a Vestaboard API compliant format
 COLUMNS = 22
 ROWS = 6
 CHARACTERS = {
@@ -83,7 +85,10 @@ BLANK_LINE = [0] * COLUMNS
 
 def parseToLines(text: str):
   """
-  Takes a string and splits it into a list of strings that are no longer than the max number of columns on the Vestaboard
+  Takes a string and splits it into a list of strings that are no longer than the max number
+  of columns on the Vestaboard
+  Params:
+    text: the string to be split
   """
   split_message = text.split(" ")
   line_groups = []
@@ -107,7 +112,10 @@ def parseToLines(text: str):
 
 def convertToCharacterCode(input):
   """
-  Converts a string, a list of unicode characters, or list of Vestaboard compliant colors to a list of Vestaboard character codes
+  Converts a string, a list of unicode characters, or list of Vestaboard compliant colors
+  to a list of Vestaboard character codes
+  Params:
+    input: the string to be converted to character codes
   """
   row = []
   for v in input:
@@ -122,7 +130,12 @@ def convertToCharacterCode(input):
 
 def padRow(row: list, maxColumns = COLUMNS, align = "center"):
   """
-  Interprets how many blank spaces are needed from an array of characters codes and adds enough padding to center the text on the board
+  Interprets how many blank spaces are needed from an array of characters codes
+  and adds enough padding to center the text on the board
+  Params:
+    row: the row to be padded
+    maxColumns: the maximum number of columns on the Vestaboard
+    align: the alignment of the text on the board
   """
   while len(row) < maxColumns:
     if align == "right":
@@ -142,7 +155,10 @@ def padRow(row: list, maxColumns = COLUMNS, align = "center"):
 
 def padBoard(board: list):
   """
-  Interprets how many blank rows are needed from a 2D array of character codes and adds enough padding to center the text on the board
+  Interprets how many blank rows are needed from a 2D array of character codes
+  and adds enough padding to center the text on the board
+  Params:
+    board: the board to be padded
   """
   while len(board) <= ROWS:
     if len(board) % 2 == 1:
@@ -156,6 +172,8 @@ def padBoard(board: list):
 def writeSimpleMessage(message):
   """
   Takes a simple string and converts it to a fully centered 2D array of character codes
+  Params:
+    message: the string to be converted to a board
   """
 
   board = []
@@ -176,6 +194,11 @@ def writeSimpleMessage(message):
 def writeTwoColumns(messages: list, maxRows: int, rightWider = False, outerAlign = False):
   """
   Takes a list of messages and displays them in two columns of rows on the board
+  Params:
+    messages: the list of messages to be displayed on the board
+    maxRows: the maximum number of rows to be displayed on the board
+    rightWider: if True, the right column will be wider than the left column
+    outerAlign: if True, the right column will be aligned to the right of the board
   """
 
   board = []

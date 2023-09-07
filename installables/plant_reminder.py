@@ -8,6 +8,8 @@ def plantReminder(plants):
     print("No plants to water!")
     exit()
 
+  # To Do: Connect to Plant Tracking API
+
   board.append(vb.convertToCharacterCode(header))
   plants.sort(key=len)
   for plant in plants:

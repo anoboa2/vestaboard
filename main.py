@@ -18,6 +18,13 @@ active_message = []
 mlb_cache = 0
 
 def createBoard(app: str, active_message, mlb_cache = mlb_cache):
+  """
+  Implements appropriate logic and constructs a board for the based on the installable app specified
+  Params:
+    app: the installable to be used to create a board
+    active_message: the current message on the board
+    mlb_cache: the current index of the mlb schedule (will be used in a future enhancement)
+  """
   if app == "plants":
     plants = ["Banana Plant", "Lipstick Plant", "Large Pothos", "Palm", "Birds of Paradise"]
     board = pr.plantReminder(plants)
@@ -50,6 +57,11 @@ def createBoard(app: str, active_message, mlb_cache = mlb_cache):
 
 
 def updateBoard(board):
+  """
+  Sends a board to the Vestaboard API
+  Params:
+    board: the message to be displayed on the board in a 6x22 array format
+  """
   print("Sending the following board to Vestaboard:")
   print(board)
   r = requests.post(

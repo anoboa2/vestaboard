@@ -7,10 +7,18 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+# Some configuration for the Spotify API using the spotipy library
 scope = "user-read-currently-playing"
 sp = spotipy.Spotify(auth_manager=SpotifyOAuth(scope=scope))
 
 def getSongFromSpotify(current_message):
+  """
+  Gets the current song from Spotify and returns a board with the song name and artist name(s)
+  Params:
+    current_message: the current message on the board
+  """
+
+  # Add some padding and embellishments to the top of the board
   header = ["GREEN", " ", " ", " ", " ", "N", "O", "w", " ", "P", "L", "A", "Y", "I", "N", "G", " ", " ", " ", " ", " ", "GREEN"]
   board = []
 
@@ -23,6 +31,7 @@ def getSongFromSpotify(current_message):
   ]
   board += design
 
+  # Get the current song from Spotify and handle edge cases
   try:
     current_song = sp.current_user_playing_track()
     if current_song == None:
@@ -35,10 +44,12 @@ def getSongFromSpotify(current_message):
     print(e)
     return current_message, 15000
 
+  # Parse the artist and song name from the Spotify response
   artists = [unidecode(artist['name']) for artist in current_song['item']['artists']]
   song = unidecode(current_song['item']['name'])
   refresh = (current_song['item']['duration_ms'] - current_song['progress_ms']) + 1000
 
+  # Construct the song and artist name lines and add them to the board
   line1 = vb.convertToCharacterCode(song)
   line1 = vb.padRow(line1)
   print(song)
@@ -59,7 +70,8 @@ def getSongFromSpotify(current_message):
 
 def spaceArtists(artists_list):
   """
-  Takes a list of artists and returns a string with a comma and space between each artist.  Evaluates the length of the string and adds spaces to the end to make it 22 characters long
+  Takes a list of artists and returns a string with a comma and space between each artist.
+  Evaluates the length of the string and adds spaces to the end to support Vestaboard's character line limit.
   """
   artists_line1 = []
   artists_line2 = []
