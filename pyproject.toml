@@ -9,4 +9,10 @@ dependencies = [
     "python-dotenv>=1.1.0",
     "requests>=2.32.4",
     "spotipy>=2.25.1",
+    "unidecode>=1.4.0",
+]
+
+[dependency-groups]
+dev = [
+    "ipykernel>=6.29.5",
 ]

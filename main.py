@@ -1,85 +1,86 @@
+"""
+Main entry point for the Vestaboard application.
+
+This script runs the orchestrator which manages different installables
+and controls which one is active on the Vestaboard device.
+"""
+
 import os
-import json
-import time
-import requests
-from installables import plant_reminder as pr
-from installables import spotify as sp
-from installables import mlb_scores as mlb
-from installables import clock as cl
+import sys
+import argparse
 from dotenv import load_dotenv
 
+# Load environment variables first, before importing any modules that might need them
 load_dotenv()
 
-VESTABOARD_API_KEY = os.getenv("VESTABOARD_API_KEY")
-PLANTREMINDER_INSTALLABLE_KEY = os.getenv("PLANTREMINDER_INSTALLABLE_KEY")
-PLANTREMINDER_INSTALLABLE_SECRET = os.getenv("PLANTREMINDER_INSTALLABLE_SECRET")
+# Import modules after environment is loaded
+from orchestrator import Orchestrator
+from vestaboard.models import Device
+from vestaboard.logging import get_logger, log_component_start, log_component_stop
 
-active_message = []
-mlb_cache = 0
-
-def createBoard(app: str, active_message, mlb_cache = mlb_cache):
-  """
-  Implements appropriate logic and constructs a board for the based on the installable app specified
-  Params:
-    app: the installable to be used to create a board
-    active_message: the current message on the board
-    mlb_cache: the current index of the mlb schedule (will be used in a future enhancement)
-  """
-  if app == "plants":
-    plants = ["Banana Plant", "Lipstick Plant", "Large Pothos", "Palm", "Birds of Paradise"]
-    board = pr.plantReminder(plants)
-    return board, 60000 * 15
-  elif app == "weather":
-    print("Weather app not yet implemented")
-    exit()
-  elif app == "clock":
-    board, refresh = cl.displayTime()
-    return board, refresh
-  elif app == "spotify":
-    board, refresh = sp.getSongFromSpotify(active_message)
-    return board, refresh
-  elif app == "mlb":
-    schedule = mlb.getSchedule()
-    board, refresh = mlb.getLiveGameFeed(schedule[mlb_cache]['gameId'])
-    if board != active_message:
-      mlb_cache = (mlb_cache + 1) % len(schedule)
-      return board, 60000
-    else:
-      mlb_cache = (mlb_cache + 1) % len(schedule)
-      return active_message, 15000
+def main():
+    """Main function to run the Vestaboard application."""
+    logger = get_logger("main")
     
-
-    # board, refresh = mlb.getLiveGameFeed('717794')
-    # return board, refresh
-  else:
-    print("No app found")
-    exit()
-
-
-def updateBoard(board):
-  """
-  Sends a board to the Vestaboard API
-  Params:
-    board: the message to be displayed on the board in a 6x22 array format
-  """
-  print("Sending the following board to Vestaboard:")
-  print(board)
-  r = requests.post(
-    url = "https://rw.vestaboard.com/",
-    headers={"X-Vestaboard-Read-Write-Key": VESTABOARD_API_KEY}, # type: ignore
-    json=board
-  )
-
-  print(r, r.text)
+    parser = argparse.ArgumentParser(description='Vestaboard Application')
+    parser.add_argument(
+        '--installable', 
+        '-i',
+        choices=['spotify', 'clock', 'mlb'],
+        default='spotify',
+        help='Which installable to run (default: spotify)'
+    )
+    parser.add_argument(
+        '--interval',
+        type=int,
+        default=60,
+        help='Update interval in seconds (default: 60)'
+    )
+    parser.add_argument(
+        '--list',
+        action='store_true',
+        help='List available installables and exit'
+    )
+    parser.add_argument(
+        '--log-level',
+        choices=['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL'],
+        default='INFO',
+        help='Set the logging level (default: INFO)'
+    )
+    
+    args = parser.parse_args()
+    
+    # Set log level from command line argument
+    if args.log_level:
+        import os
+        os.environ['VESTABOARD_LOG_LEVEL'] = args.log_level
+    
+    log_component_start("main", installable=args.installable, interval=args.interval, log_level=args.log_level)
+    
+    try:
+        # Create a device instance (6 rows, 22 columns for standard Vestaboard)
+        device = Device(
+            rows=6,
+            columns=22,
+            active_installable=args.installable
+        )
+        
+        # Create orchestrator
+        orchestrator = Orchestrator(device)
+        
+        if args.list:
+            orchestrator.list_installables()
+            return
+        
+        # Run the orchestrator
+        orchestrator.run(args.installable, args.interval)
+        
+    except Exception as e:
+        logger.exception("Fatal error in main application")
+        sys.exit(1)
+    finally:
+        log_component_stop("main")
 
 
 if __name__ == "__main__":
-  while True:
-    board, refresh = createBoard("spotify", active_message)
-    if board == active_message:
-      print("No update to board")
-    else:
-      updateBoard(board)
-      active_message = board
-    time.sleep(refresh / 1000)
- 
+    main()
