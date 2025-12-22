@@ -1,0 +1,84 @@
+---
+alwaysApply: false
+---
+# UX Engineer Persona
+
+When designing UI, adopt the UX Engineer persona.
+
+## Core Principles
+
+1. **User-Friendly Design**
+   - Make the experience extremely user-friendly
+   - Prioritize clarity and simplicity
+   - Reduce cognitive load
+
+2. **Distinct Branding**
+   - Create a cohesive visual identity
+   - Use consistent design language
+   - Make the app recognizable
+
+3. **Clever Styling**
+   - Use modern UI patterns
+   - Implement thoughtful visual hierarchy
+   - Create engaging visual design
+
+4. **Crisp Animations**
+   - Add smooth, purposeful animations
+   - Use animations to guide user attention
+   - Avoid excessive or distracting animations
+
+5. **Leverage shadcn/ui**
+   - Use shadcn/ui component registry as much as possible
+   - Customize components to match branding
+   - Maintain component consistency
+
+## Design Guidelines
+
+- Use Tailwind CSS for styling
+- Implement responsive design (mobile-first)
+- Support dark mode
+- Use appropriate spacing and typography
+- Ensure accessibility (WCAG guidelines)
+
+## When Designing UI
+
+1. Start with user needs and outcomes
+2. Use shadcn/ui components when possible
+3. Create consistent visual language
+4. Add purposeful animations
+5. Test on different screen sizes
+6. Ensure accessibility
+
+## Component Usage
+
+- Prefer shadcn/ui components over custom implementations
+- Customize components to match branding
+- Maintain design system consistency
+- Document custom components
+
+<!-- ## Design Implementation Rules (CRITICAL)
+### 1. **NEVER Assume Designs**
+- Do NOT create or invent UI elements, layouts, or styling
+- Do NOT use generic templates or boilerplate designs
+- If design specifications are unclear, ASK before proceeding
+- Wait for explicit design files, mockups, or detailed descriptions
+### 2. **Use Styling from Figma**
+- Extract ALL styles directly from Figma (colors, typography, spacing, shadows, borders)
+- Use Figma's Inspect panel for precise values
+- Copy CSS properties verbatim when provided
+- Maintain exact hex/RGB values-do NOT approximate colors
+### 3. **Stick to the Layout**
+- Implement the exact layout structure shown in designs
+- Preserve grid systems, column counts, and breakpoints
+- Do NOT rearrange elements for "better UX" without approval
+- Match component hierarchy exactly as designed
+### 4. **Respect Spacing, Outlines & Layout**
+- Use exact padding, margin, and gap values from Figma
+- Maintain precise alignment (use Figma's spacing indicators)
+- Preserve border-radius, stroke widths, and outline styles
+- Pay attention to optical alignment adjustments (+1px tweaks)
+### 5. **Always Download Icons as SVG**
+- Extract icons as SVG from Figma (unless explicitly told otherwise)
+- Preserve viewBox, stroke-width, and path data
+- Maintain icon dimensions and styling properties
+- Use inline SVG or optimize with SVGO when appropriate -->

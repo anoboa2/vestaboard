@@ -4,7 +4,7 @@ from unidecode import unidecode
 from typing import Tuple, Optional
 import os
 
-from .base import BaseInstallable
+from ._base import BaseInstallable
 from vestaboard.models import Board, Device
 from vestaboard.utils import convert_to_character_code
 from vestaboard.logging import get_logger

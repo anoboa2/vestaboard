@@ -4,7 +4,7 @@ import os
 from typing import Tuple, List, Dict, Any
 from dotenv import load_dotenv
 
-from .base import BaseInstallable
+from installables._base import BaseInstallable
 from vestaboard.models import Board, Device, Row
 from vestaboard.utils import convert_to_character_code
 from vestaboard.logging import get_logger

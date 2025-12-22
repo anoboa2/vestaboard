@@ -1,0 +1,151 @@
+---
+alwaysApply: true
+---
+# Documentation Organization
+
+All project documentation must be organized in the `docs/` folder at the project root.
+
+## Folder Structure
+
+```
+docs/
+├── features/        # Feature-specific documentation
+├── guides/          # How-to guides and architecture docs
+├── backlog/         # Future work and bug tracking
+├── changelog.md     # Project changelog
+├── project-status.md
+└── project-summary.md
+```
+
+## Features Folder (`docs/features/`)
+
+When starting work on a new feature:
+
+1. **Create a feature folder** with kebab-case naming: `docs/features/<feature-name>/`
+2. **Create standard documents** within the feature folder:
+   - `planning.md` - Initial planning, requirements, and design decisions
+   - `progress.md` - Ongoing progress updates during development
+   - `status.md` - Current implementation status and next steps
+   - `summary.md` - High-level summary of the feature
+   - `completion.md` - Final completion summary and what was delivered
+
+Example:
+```
+docs/features/user-authentication/
+├── planning.md
+├── progress.md
+├── status.md
+├── summary.md
+└── completion.md
+```
+
+**When to create feature docs:**
+- At the start of any new feature development
+- When planning a significant change or addition
+- When implementing a user-facing capability
+
+**Document naming:**
+- Use lowercase with hyphens for folder names (kebab-case)
+- Use standard filenames: `planning.md`, `progress.md`, `status.md`, `summary.md`, `completion.md`
+- Additional docs can be added as needed (e.g., `backend-completion.md`, `frontend-completion.md`)
+
+## Guides Folder (`docs/guides/`)
+
+Continuously updated documentation about different sections and services of the project.
+
+**Standard guides to maintain:**
+- `getting-started.md` - Initial setup and installation
+- `backend-architecture.md` - Backend services, structure, and patterns
+- `frontend-architecture.md` - Frontend components and patterns
+- `game-engine.md` - Game logic and mechanics
+- `api-reference.md` - API endpoints and usage
+- `testing.md` - Testing infrastructure and best practices
+- `quick-start-gameplay.md` - Quick start for gameplay features
+
+**When to update guides:**
+- After implementing a new feature that affects architecture
+- When adding new API endpoints
+- When changing project structure
+- When adding new testing patterns
+- Whenever project knowledge should be captured for team reference
+
+## Backlog Folder (`docs/backlog/`)
+
+A parking lot for future work and bug tracking.
+
+**Document types:**
+- `feature-<name>.md` - Proposed features not yet started
+- `bug-<description>.md` - Known bugs captured for future resolution
+- `enhancement-<name>.md` - Ideas for improvements
+
+Example:
+```
+docs/backlog/
+├── feature-mobile-app.md
+├── feature-tournament-system.md
+├── bug-websocket-reconnection.md
+└── enhancement-card-animations.md
+```
+
+**When to create backlog docs:**
+- When a feature idea is discussed but not ready to implement
+- When bugs are discovered but can't be fixed immediately
+- When enhancement ideas are proposed
+
+## Changelog (`docs/changelog.md`)
+
+The changelog MUST be updated whenever a feature is completed.
+
+**Format:**
+```markdown
+## [Date] - Feature Name
+
+### Added
+- List of new features or capabilities
+
+### Changed
+- List of changes to existing functionality
+
+### Fixed
+- List of bug fixes
+
+### Technical Details
+- Key technical decisions or changes
+- Files affected
+- Database migrations
+```
+
+**When to update:**
+- Immediately after completing a feature
+- When merging significant changes to main branch
+- After fixing important bugs
+
+## Planning Considerations
+
+When Cursor performs planning for new work:
+
+1. **Check existing documentation** in `docs/features/` for related work
+2. **Consider which guides** in `docs/guides/` need updating
+3. **Create feature folder** at planning time, starting with `planning.md`
+4. **Update changelog** when work is complete
+5. **Move or create backlog items** for related future work
+
+##File Organization Rules
+
+**DO:**
+- Put all documentation in `docs/` folder
+- Create feature folders for each new feature
+- Update guides when architecture changes
+- Update changelog for every completed feature
+- Use descriptive, kebab-case folder names
+- Keep feature docs together in their folder
+- Remove markdown document from `docs/backlog/` if it has been captured in `docs/features/`
+
+**DON'T:**
+- Create markdown files in the project root (except README.md)
+- Mix feature documentation across multiple folders
+- Forget to update the changelog
+- Create one-off documentation without a clear category
+- Use spaces or special characters in folder names
+
+

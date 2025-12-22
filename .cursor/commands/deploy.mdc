@@ -1,0 +1,55 @@
+# Deploy Command
+
+Deploy the Meterage application to AWS.
+
+## Usage
+
+This command helps deploy the application infrastructure and services.
+
+## Steps
+
+1. **Deploy Infrastructure**
+   ```bash
+   cd infrastructure
+   npm run build
+   npx cdk deploy
+   ```
+
+2. **Build and Push Docker Images**
+   ```bash
+   # Backend
+   cd backend
+   docker build -t meterage-backend .
+   docker tag meterage-backend:latest <ECR_URI>/meterage-backend:latest
+   docker push <ECR_URI>/meterage-backend:latest
+   
+   # Frontend
+   cd frontend
+   docker build -t meterage-frontend .
+   docker tag meterage-frontend:latest <ECR_URI>/meterage-frontend:latest
+   docker push <ECR_URI>/meterage-frontend:latest
+   ```
+
+3. **Update ECS Services**
+   ```bash
+   aws ecs update-service --cluster meterage-cluster --service meterage-backend-service --force-new-deployment
+   ```
+
+## Automated Deployment
+
+The project uses GitHub Actions for automated deployment:
+- Infrastructure changes trigger `infrastructure.yml` workflow
+- Application changes trigger `deploy.yml` workflow
+
+## Prerequisites
+
+- AWS CLI configured
+- CDK CLI installed
+- Docker installed
+- Appropriate AWS permissions
+
+## Notes
+
+- Always test infrastructure changes with `cdk synth` first
+- Ensure all resources have Application tags
+- Monitor deployment in CloudWatch
