@@ -82,3 +82,17 @@ export async function getCurrentBoard(): Promise<ApiResponse & { grid?: string[]
   }
 }
 
+export async function checkBackendStatus(): Promise<boolean> {
+  try {
+    const response = await fetch(`${API_BASE_URL}/`, {
+      method: "GET",
+      headers: {
+        "Content-Type": "application/json",
+      },
+    });
+    return response.ok;
+  } catch (error) {
+    return false;
+  }
+}
+

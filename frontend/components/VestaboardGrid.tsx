@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useCallback } from "react";
+import React, { useState, useCallback, useEffect } from "react";
 import { GridCell } from "./GridCell";
 import { useKeyboardNavigation } from "./KeyboardHandler";
 import type { GridPosition } from "@/lib/grid-utils";
@@ -15,7 +15,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
-import { sendGridToBackend } from "@/lib/api-client";
+import { sendGridToBackend, checkBackendStatus } from "@/lib/api-client";
 
 export const VestaboardGrid: React.FC = () => {
   const [grid, setGrid] = useState<string[][]>(
@@ -32,6 +32,7 @@ export const VestaboardGrid: React.FC = () => {
     type: "success" | "error" | null;
     message: string;
   }>({ type: null, message: "" });
+  const [isBackendOnline, setIsBackendOnline] = useState<boolean | null>(null);
 
   const updateCell = useCallback((row: number, col: number, value: string) => {
     setGrid((prev) => {
@@ -109,12 +110,44 @@ export const VestaboardGrid: React.FC = () => {
     }
   }, [grid]);
 
+  // Check backend status on mount and periodically
+  useEffect(() => {
+    const checkStatus = async () => {
+      const status = await checkBackendStatus();
+      setIsBackendOnline(status);
+    };
+
+    // Check immediately
+    checkStatus();
+
+    // Check every 5 seconds
+    const interval = setInterval(checkStatus, 5000);
+
+    return () => clearInterval(interval);
+  }, []);
+
   return (
     <div className="w-full max-w-6xl mx-auto p-6 space-y-6">
       <Card>
         <CardHeader>
           <div className="flex items-center justify-between">
-            <CardTitle>Vestaboard Grid</CardTitle>
+            <div className="flex items-center gap-2">
+              <CardTitle>Vestaboard Grid</CardTitle>
+              {isBackendOnline !== null && (
+                <div
+                  className={`w-2 h-2 rounded-full ${
+                    isBackendOnline
+                      ? "bg-green-500 animate-pulse"
+                      : "bg-red-500"
+                  }`}
+                  title={
+                    isBackendOnline
+                      ? "Backend is online"
+                      : "Backend is offline"
+                  }
+                />
+              )}
+            </div>
             <div className="flex gap-2">
               <Button
                 onClick={handleSendToVestaboard}

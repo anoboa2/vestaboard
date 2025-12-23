@@ -5,10 +5,10 @@ This package contains all the installable modules that can display content on a 
 Each installable inherits from BaseInstallable and implements the required methods.
 """
 
-from .base import BaseInstallable
-from .spotify import SpotifyInstallable
-from .clock import ClockInstallable
-from .mlb_scores import MLBScoresInstallable
+from ._base import BaseInstallable
+from .spotify.app import SpotifyInstallable
+from .clock.app import ClockInstallable
+from .sports.mlb.app import MLBScoresInstallable
 
 __all__ = [
     'BaseInstallable',
