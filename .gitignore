@@ -1,7 +1,10 @@
 __pycache__/*
 */__pycache__/*
+installables/*/__pycache__/*
 .vscode/*
 tests/*
 .cache
+.cache_spotify
 .env
+.env.local
 notebook.ipynb
