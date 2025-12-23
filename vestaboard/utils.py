@@ -25,3 +25,31 @@ def convert_to_character_code(input: List[str]) -> List[int]:
       continue
 
   return line
+
+def convert_from_character_code(codes: List[int]) -> List[str]:
+  """Convert Vestaboard character codes back to characters/strings.
+
+  Args:
+    codes: List of character codes
+
+  Returns:
+    List[str]: List of character strings (colors shown as placeholder '█')
+  """
+  characters = Characters()
+  # Create reverse mapping from code (as int) to character
+  code_to_char = {int(v): k for k, v in characters.code.items()}
+  
+  result = []
+  for code in codes:
+    if code in code_to_char:
+      char = code_to_char[code]
+      # For colors, show a placeholder since they can't be displayed as text
+      if char in ['RED', 'ORANGE', 'YELLOW', 'GREEN', 'BLUE', 'PURPLE', 'WHITE', 'BLACK', 'FILLED']:
+        result.append('█')  # Use block character as placeholder for colors
+      else:
+        result.append(char)
+    else:
+      # Unknown code, default to space
+      result.append(' ')
+  
+  return result

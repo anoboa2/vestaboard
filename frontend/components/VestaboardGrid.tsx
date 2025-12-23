@@ -15,7 +15,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
-import { sendGridToBackend, checkBackendStatus } from "@/lib/api-client";
+import { sendGridToBackend, checkBackendStatus, getCurrentBoard } from "@/lib/api-client";
 
 export const VestaboardGrid: React.FC = () => {
   const [grid, setGrid] = useState<string[][]>(
@@ -33,6 +33,38 @@ export const VestaboardGrid: React.FC = () => {
     message: string;
   }>({ type: null, message: "" });
   const [isBackendOnline, setIsBackendOnline] = useState<boolean | null>(null);
+  const [isLoadingBoard, setIsLoadingBoard] = useState(false);
+
+  const loadCurrentBoard = useCallback(async () => {
+    setIsLoadingBoard(true);
+    try {
+      const result = await getCurrentBoard();
+      console.log("getCurrentBoard result:", result);
+      if (result.success && result.grid) {
+        console.log("Loading grid with", result.grid.length, "rows");
+        // Ensure grid has correct dimensions (8 rows x 22 cols)
+        const loadedGrid: string[][] = [];
+        for (let i = 0; i < GRID_ROWS; i++) {
+          const row = result.grid[i] || [];
+          const paddedRow = [...row];
+          // Pad row to 22 columns if needed
+          while (paddedRow.length < GRID_COLS) {
+            paddedRow.push('');
+          }
+          // Truncate if longer
+          loadedGrid.push(paddedRow.slice(0, GRID_COLS));
+        }
+        console.log("Setting grid:", loadedGrid);
+        setGrid(loadedGrid);
+      } else {
+        console.warn("getCurrentBoard returned unsuccessful result:", result);
+      }
+    } catch (error) {
+      console.error("Error loading current board:", error);
+    } finally {
+      setIsLoadingBoard(false);
+    }
+  }, []);
 
   const updateCell = useCallback((row: number, col: number, value: string) => {
     setGrid((prev) => {
@@ -110,24 +142,36 @@ export const VestaboardGrid: React.FC = () => {
     }
   }, [grid]);
 
-  // Check backend status on mount and periodically
+  // Check backend status and load current board on mount
   useEffect(() => {
     const checkStatus = async () => {
       const status = await checkBackendStatus();
       setIsBackendOnline(status);
+      console.log(`Backend status check: ${status ? "online" : "offline"}`);
+      return status;
     };
 
-    // Check immediately
-    checkStatus();
+    // Check status and load board if online
+    checkStatus().then((isOnline) => {
+      if (isOnline) {
+        loadCurrentBoard();
+      }
+    });
 
     // Check every 5 seconds
-    const interval = setInterval(checkStatus, 5000);
+    const interval = setInterval(async () => {
+      const isOnline = await checkStatus();
+      if (isOnline) {
+        // Optionally reload board periodically (commented out to avoid overwriting user edits)
+        // loadCurrentBoard();
+      }
+    }, 5000);
 
     return () => clearInterval(interval);
-  }, []);
+  }, [loadCurrentBoard]);
 
   return (
-    <div className="w-full max-w-6xl mx-auto p-6 space-y-6">
+    <div className="w-full space-y-6">
       <Card>
         <CardHeader>
           <div className="flex items-center justify-between">
@@ -290,6 +334,13 @@ export const VestaboardGrid: React.FC = () => {
                   </div>
                 </DialogContent>
               </Dialog>
+              <Button
+                variant="outline"
+                onClick={loadCurrentBoard}
+                disabled={isLoadingBoard || !isBackendOnline}
+              >
+                {isLoadingBoard ? "Loading..." : "Refresh Board"}
+              </Button>
               <Button variant="outline" onClick={clearGrid}>
                 Clear Grid
               </Button>

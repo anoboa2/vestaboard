@@ -1,11 +1,13 @@
-from pydantic import BaseModel, Field, computed_field
+from pydantic import BaseModel, Field
 from typing import Optional, List, Literal, Union, Annotated
 import requests
 import os
+from dotenv import load_dotenv
 
 from .logging import get_logger
 
-VESTABOARD_API_KEY = os.getenv("VESTABOARD_API_KEY")
+# Load environment variables before accessing them
+load_dotenv()
 
 class Row(BaseModel):
     index: int
@@ -193,12 +195,24 @@ class Device(BaseModel):
             row.length = self.columns
 
         try:
+            # Ensure API key is available
+            api_key = os.getenv("VESTABOARD_API_KEY")
+            if not api_key:
+                raise Exception("VESTABOARD_API_KEY environment variable not set")
+            
             # Convert Row objects to just the character codes for API
-            message_data = [row.line for row in new_board.message]
+            # Ensure each row has exactly self.columns elements (truncate or pad as needed)
+            message_data = []
+            for row in new_board.message:
+                row_data = row.line[:self.columns]  # Truncate if longer
+                if len(row_data) < self.columns:
+                    # Pad if shorter (shouldn't happen if pad_line was called, but be safe)
+                    row_data.extend([0] * (self.columns - len(row_data)))
+                message_data.append(row_data)
 
             response = requests.post(
                 url = "https://rw.vestaboard.com/",
-                headers={"X-Vestaboard-Read-Write-Key": VESTABOARD_API_KEY}, # type: ignore
+                headers={"X-Vestaboard-Read-Write-Key": api_key},
                 json=message_data
             )
 
@@ -219,30 +233,140 @@ class Device(BaseModel):
         """
         logger = get_logger("device")
         try:
+            # Ensure API key is available
+            api_key = os.getenv("VESTABOARD_API_KEY")
+            if not api_key:
+                raise Exception("VESTABOARD_API_KEY environment variable not set")
+            
             response = requests.get(
                 url = "https://rw.vestaboard.com/",
-                headers={"X-Vestaboard-Read-Write-Key": VESTABOARD_API_KEY}, # type: ignore
+                headers={"X-Vestaboard-Read-Write-Key": api_key},
             )
 
             if response.status_code == 200:
                 response_data = response.json()
-                logger.debug(f"API Response: {response_data}")
+                logger.info(f"API Response keys: {list(response_data.keys())}")
+                logger.debug(f"Full API Response: {response_data}")
                 
                 # Handle the actual API response structure
                 if 'currentMessage' in response_data:
-                    # API returns {currentMessage: {id: ..., layout: [...]}}
-                    layout = response_data['currentMessage'].get('layout', [])
-                    # Convert layout to our Board format
+                    current_message = response_data['currentMessage']
+                    logger.info(f"currentMessage type: {type(current_message)}, value: {current_message}")
+                    
+                    if current_message is None:
+                        logger.info("currentMessage is None - no active board")
+                        # Create empty board
+                        rows = []
+                        for i in range(self.rows):
+                            rows.append(Row(
+                                index=i,
+                                length=self.columns,
+                                line=[0] * self.columns,
+                                align="left"
+                            ))
+                        self.active_board = Board(
+                            rows=self.rows,
+                            columns=self.columns,
+                            message=rows
+                        )
+                    elif isinstance(current_message, dict):
+                        # API returns {currentMessage: {id: ..., layout: [...]}}
+                        layout = current_message.get('layout', [])
+                        logger.info(f"Layout type: {type(layout)}, length: {len(layout) if isinstance(layout, (list, str)) else 'N/A'}")
+                        
+                        # Handle case where layout might be a string (JSON string) or list
+                        if isinstance(layout, str):
+                            import json
+                            try:
+                                layout = json.loads(layout)
+                                logger.info(f"Parsed layout from JSON string, now has {len(layout)} rows")
+                            except json.JSONDecodeError:
+                                logger.warning(f"Could not parse layout as JSON: {layout[:100]}...")
+                                layout = []
+                        
+                        # Log the actual grid data
+                        if isinstance(layout, list):
+                            logger.info(f"Grid layout ({len(layout)} rows):")
+                            for i, row in enumerate(layout):
+                                if isinstance(row, list):
+                                    logger.info(f"  Row {i}: {row}")
+                                else:
+                                    logger.info(f"  Row {i}: {type(row)} - {str(row)[:100]}")
+                        else:
+                            logger.warning(f"Layout is not a list after parsing: {type(layout)} - {str(layout)[:200]}")
+                        logger.debug(f"Full layout value: {layout}")
+                        
+                        # Ensure layout is a list
+                        if not isinstance(layout, list):
+                            logger.error(f"Layout is not a list, type: {type(layout)}, value: {layout}")
+                            layout = []
+                        
+                        logger.info(f"Processing layout with {len(layout)} rows")
+                        
+                        # Convert layout to our Board format
                     rows = []
                     for i, row_data in enumerate(layout):
-                        row = Row(
+                        try:
+                            # Ensure row_data is a list of integers
+                            if isinstance(row_data, str):
+                                import json
+                                try:
+                                    row_data = json.loads(row_data)
+                                except json.JSONDecodeError:
+                                    logger.warning(f"Could not parse row_data as JSON at index {i}: {row_data[:50]}...")
+                                    row_data = []
+                            
+                            if not isinstance(row_data, list):
+                                logger.warning(f"Row data at index {i} is not a list: {type(row_data)} - {str(row_data)[:50]}")
+                                row_data = []
+                            
+                            # Ensure all elements are integers (convert to int, default to 0 if not valid)
+                            processed_row = []
+                            for x in row_data:
+                                try:
+                                    processed_row.append(int(x))
+                                except (ValueError, TypeError):
+                                    processed_row.append(0)
+                            
+                            # Ensure row has correct length (pad or truncate)
+                            if len(processed_row) < self.columns:
+                                processed_row.extend([0] * (self.columns - len(processed_row)))
+                            elif len(processed_row) > self.columns:
+                                processed_row = processed_row[:self.columns]
+                            
+                            row = Row(
+                                index=i,
+                                length=self.columns,
+                                line=processed_row,
+                                align="left"
+                            )
+                            rows.append(row)
+                        except Exception as e:
+                            logger.error(f"Error processing row {i}: {e}, row_data type: {type(row_data)}, value: {str(row_data)[:100]}")
+                            # Create empty row as fallback
+                            rows.append(Row(
+                                index=i,
+                                length=self.columns,
+                                line=[0] * self.columns,
+                                align="left"
+                            ))
+                    
+                    self.active_board = Board(
+                        rows=self.rows,
+                        columns=self.columns,
+                        message=rows
+                    )
+                elif 'currentMessage' in response_data and response_data['currentMessage'] is None:
+                    # No current message on the board - create empty board
+                    logger.info("No current message on Vestaboard - returning empty board")
+                    rows = []
+                    for i in range(self.rows):
+                        rows.append(Row(
                             index=i,
                             length=self.columns,
-                            line=row_data,
+                            line=[0] * self.columns,
                             align="left"
-                        )
-                        rows.append(row)
-                    
+                        ))
                     self.active_board = Board(
                         rows=self.rows,
                         columns=self.columns,
@@ -250,13 +374,30 @@ class Device(BaseModel):
                     )
                 else:
                     # Try to parse as direct Board format
-                    self.active_board = Board.model_validate(response_data)
-                    # Ensure the board inherits device dimensions
-                    self.active_board.rows = self.rows
-                    self.active_board.columns = self.columns
-                    # Update all rows to inherit the board's column count
-                    for row in self.active_board.message:
-                        row.length = self.columns
+                    try:
+                        self.active_board = Board.model_validate(response_data)
+                        # Ensure the board inherits device dimensions
+                        self.active_board.rows = self.rows
+                        self.active_board.columns = self.columns
+                        # Update all rows to inherit the board's column count
+                        for row in self.active_board.message:
+                            row.length = self.columns
+                    except Exception:
+                        # If parsing fails, create empty board
+                        logger.warning("Could not parse board response - returning empty board")
+                        rows = []
+                        for i in range(self.rows):
+                            rows.append(Row(
+                                index=i,
+                                length=self.columns,
+                                line=[0] * self.columns,
+                                align="left"
+                            ))
+                        self.active_board = Board(
+                            rows=self.rows,
+                            columns=self.columns,
+                            message=rows
+                        )
             else:
                 error_msg = f"Error getting board: {response.content}"
                 logger.error(error_msg)

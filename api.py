@@ -8,13 +8,15 @@ to the Vestaboard device.
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from typing import List
+from typing import List, Dict, Optional
 import os
+from contextlib import asynccontextmanager
 from dotenv import load_dotenv
 
 from vestaboard.models import Device, Board, Row
-from vestaboard.utils import convert_to_character_code
+from vestaboard.utils import convert_to_character_code, convert_from_character_code
 from vestaboard.logging import get_logger
+from orchestrator import Orchestrator
 
 # Load environment variables
 load_dotenv()
@@ -22,8 +24,33 @@ load_dotenv()
 # Initialize logger
 logger = get_logger("api")
 
+# Global orchestrator instance
+orchestrator: Optional[Orchestrator] = None
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Manage the orchestrator lifecycle."""
+    global orchestrator
+    
+    # Startup: Initialize orchestrator
+    device = Device(
+        rows=6,
+        columns=22,
+        active_installable="none"
+    )
+    orchestrator = Orchestrator(device)
+    orchestrator.start_background_task()
+    logger.info("Orchestrator initialized and background task started")
+    
+    yield
+    
+    # Shutdown: Stop orchestrator
+    if orchestrator:
+        orchestrator.stop_background_task()
+        logger.info("Orchestrator background task stopped")
+
 # Create FastAPI app
-app = FastAPI(title="Vestaboard API", version="1.0.0")
+app = FastAPI(title="Vestaboard API", version="1.0.0", lifespan=lifespan)
 
 # Configure CORS
 app.add_middleware(
@@ -44,6 +71,18 @@ class ApiResponse(BaseModel):
     message: str
     error: str | None = None
     grid: List[List[str]] | None = None
+
+
+class InstallableInfo(BaseModel):
+    name: str
+    description: str
+    status: str
+
+
+class InstallablesResponse(BaseModel):
+    success: bool
+    installables: Dict[str, InstallableInfo]
+    active: Optional[str] = None
 
 
 # Create a device instance (8 rows, 22 columns for frontend)
@@ -147,33 +186,40 @@ async def get_current_board():
         logger.info("Fetching current board from Vestaboard")
         
         # Get current board from device
-        device.get_board()
+        try:
+            device.get_board()
+        except Exception as e:
+            logger.warning(f"Error fetching board, returning empty board: {e}")
+            # If get_board fails, return empty board instead of error
+            device.active_board = None
         
+        # If no board, return empty grid (8 rows x 22 cols)
         if device.active_board is None:
-            raise HTTPException(
-                status_code=404,
-                detail="No active board found"
+            grid = [[' '] * 22 for _ in range(8)]
+            return ApiResponse(
+                success=True,
+                message="Board is empty",
+                grid=grid
             )
         
         # Convert board back to grid format
         grid = []
         for row in device.active_board.message:
-            # Convert character codes back to characters
-            # This is a simplified conversion - you may need to enhance this
-            row_chars = []
-            for code in row.line:
-                # Find character by code (reverse lookup)
-                # For now, we'll use a simple mapping
-                if code == 0:
-                    row_chars.append(" ")
-                elif 1 <= code <= 26:
-                    row_chars.append(chr(ord("A") + code - 1))
-                elif 27 <= code <= 36:
-                    row_chars.append(str(code - 27))
-                else:
-                    row_chars.append(" ")  # Default for special characters
-            
+            # Convert character codes back to characters using utility function
+            row_chars = convert_from_character_code(row.line)
+            # Ensure row has exactly 22 columns (pad or truncate if needed)
+            if len(row_chars) < 22:
+                row_chars.extend([' '] * (22 - len(row_chars)))
+            elif len(row_chars) > 22:
+                row_chars = row_chars[:22]
             grid.append(row_chars)
+        
+        # Pad grid to 8 rows (frontend expects 8 rows, Vestaboard returns 6)
+        while len(grid) < 8:
+            grid.append([' '] * 22)
+        
+        # Ensure grid has exactly 8 rows (truncate if somehow more)
+        grid = grid[:8]
         
         return ApiResponse(
             success=True,
@@ -188,6 +234,143 @@ async def get_current_board():
         raise HTTPException(
             status_code=500,
             detail=f"Failed to fetch current board: {str(e)}"
+        )
+
+
+@app.get("/api/installables", response_model=InstallablesResponse)
+async def get_installables():
+    """
+    Get list of all available installables with their status.
+    
+    Returns:
+        InstallablesResponse with all installables and their info
+    """
+    try:
+        if orchestrator is None:
+            raise HTTPException(
+                status_code=503,
+                detail="Orchestrator not initialized"
+            )
+        
+        installables_info = orchestrator.get_installables_info()
+        active_name = orchestrator.get_active_installable_name()
+        
+        return InstallablesResponse(
+            success=True,
+            installables=installables_info,
+            active=active_name
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception(f"Error getting installables: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to get installables: {str(e)}"
+        )
+
+
+@app.get("/api/installables/active", response_model=Dict[str, Optional[str]])
+async def get_active_installable():
+    """
+    Get the currently active installable.
+    
+    Returns:
+        Dictionary with 'active' key containing the active installable name or None
+    """
+    try:
+        if orchestrator is None:
+            raise HTTPException(
+                status_code=503,
+                detail="Orchestrator not initialized"
+            )
+        
+        active_name = orchestrator.get_active_installable_name()
+        return {"active": active_name}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception(f"Error getting active installable: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to get active installable: {str(e)}"
+        )
+
+
+@app.post("/api/installables/{name}/activate", response_model=ApiResponse)
+async def activate_installable(name: str):
+    """
+    Activate a specific installable.
+    
+    Args:
+        name: Name of the installable to activate (spotify, clock, mlb)
+        
+    Returns:
+        ApiResponse with success status
+    """
+    try:
+        if orchestrator is None:
+            raise HTTPException(
+                status_code=503,
+                detail="Orchestrator not initialized"
+            )
+        
+        success = orchestrator.set_active_installable(name)
+        if not success:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Installable '{name}' not found"
+            )
+        
+        logger.info(f"Activated installable: {name}")
+        return ApiResponse(
+            success=True,
+            message=f"Installable '{name}' activated successfully"
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception(f"Error activating installable: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to activate installable: {str(e)}"
+        )
+
+
+@app.post("/api/installables/deactivate", response_model=ApiResponse)
+async def deactivate_installable():
+    """
+    Deactivate the current installable (unset it).
+    
+    Returns:
+        ApiResponse with success status
+    """
+    try:
+        if orchestrator is None:
+            raise HTTPException(
+                status_code=503,
+                detail="Orchestrator not initialized"
+            )
+        
+        success = orchestrator.deactivate_installable()
+        if not success:
+            return ApiResponse(
+                success=False,
+                message="No active installable to deactivate"
+            )
+        
+        logger.info("Deactivated installable")
+        return ApiResponse(
+            success=True,
+            message="Installable deactivated successfully"
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception(f"Error deactivating installable: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to deactivate installable: {str(e)}"
         )
 
 
