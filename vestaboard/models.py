@@ -201,14 +201,23 @@ class Device(BaseModel):
                 raise Exception("VESTABOARD_API_KEY environment variable not set")
             
             # Convert Row objects to just the character codes for API
-            # Ensure each row has exactly self.columns elements (truncate or pad as needed)
+            # Vestaboard API expects exactly 6 rows x 22 columns
+            # Truncate or pad to match these dimensions
+            VESTABOARD_ROWS = 6
+            VESTABOARD_COLS = 22
+            
             message_data = []
-            for row in new_board.message:
-                row_data = row.line[:self.columns]  # Truncate if longer
-                if len(row_data) < self.columns:
+            rows_to_send = new_board.message[:VESTABOARD_ROWS]  # Only send first 6 rows
+            for row in rows_to_send:
+                row_data = row.line[:VESTABOARD_COLS]  # Truncate if longer
+                if len(row_data) < VESTABOARD_COLS:
                     # Pad if shorter (shouldn't happen if pad_line was called, but be safe)
-                    row_data.extend([0] * (self.columns - len(row_data)))
+                    row_data.extend([0] * (VESTABOARD_COLS - len(row_data)))
                 message_data.append(row_data)
+            
+            # Ensure we have exactly 6 rows (pad with empty rows if needed)
+            while len(message_data) < VESTABOARD_ROWS:
+                message_data.append([0] * VESTABOARD_COLS)
 
             response = requests.post(
                 url = "https://rw.vestaboard.com/",
@@ -220,12 +229,27 @@ class Device(BaseModel):
                 self.active_board = new_board
                 logger.debug("Board updated successfully via API")
             else:
-                print("response", response.request.body)
-                error_msg = f"Error updating board: {response.status_code}"
-                logger.error(error_msg)
-                raise Exception(error_msg)
+                # Log request and response for debugging
+                logger.error(f"Request body: {response.request.body}")
+                error_message = f"Error updating board: {response.status_code}"
+                try:
+                    response_text = response.text
+                    logger.error(f"Response body: {response_text}")
+                    # Try to parse JSON error message from Vestaboard API
+                    try:
+                        error_json = response.json()
+                        error_message = error_json.get("message", error_message)
+                    except (ValueError, AttributeError, TypeError):
+                        # If JSON parsing fails, use the response text if available
+                        if response_text:
+                            error_message = response_text
+                except Exception:
+                    logger.error(f"Response content: {response.content}")
+                logger.error(error_message)
+                raise Exception(error_message)
         except Exception as e:
             logger.exception(f"Error updating board: {e}")
+            raise  # Re-raise the exception so the API endpoint can handle it
 
     def get_board(self):
         """
@@ -284,17 +308,6 @@ class Device(BaseModel):
                                 logger.warning(f"Could not parse layout as JSON: {layout[:100]}...")
                                 layout = []
                         
-                        # Log the actual grid data
-                        if isinstance(layout, list):
-                            logger.info(f"Grid layout ({len(layout)} rows):")
-                            for i, row in enumerate(layout):
-                                if isinstance(row, list):
-                                    logger.info(f"  Row {i}: {row}")
-                                else:
-                                    logger.info(f"  Row {i}: {type(row)} - {str(row)[:100]}")
-                        else:
-                            logger.warning(f"Layout is not a list after parsing: {type(layout)} - {str(layout)[:200]}")
-                        logger.debug(f"Full layout value: {layout}")
                         
                         # Ensure layout is a list
                         if not isinstance(layout, list):

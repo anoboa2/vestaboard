@@ -26,7 +26,18 @@ export function useKeyboardNavigation({
 }: UseKeyboardNavigationProps) {
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLInputElement>) => {
-      const isMac = navigator.platform.toUpperCase().indexOf("MAC") >= 0;
+      // Detect Mac using userAgent (more reliable than deprecated navigator.platform)
+      // Check if we're in a browser environment first
+      let isMac = false;
+      if (typeof window !== "undefined" && typeof navigator !== "undefined") {
+        // Try modern API first (Chrome/Edge)
+        if (navigator.userAgentData?.platform === "macOS") {
+          isMac = true;
+        } else {
+          // Fallback to userAgent string
+          isMac = /Mac|iPhone|iPod|iPad/i.test(navigator.userAgent);
+        }
+      }
       const cmdOrCtrl = isMac ? e.metaKey : e.ctrlKey;
       const altOrOption = e.altKey; // Option on Mac, Alt on Windows
 

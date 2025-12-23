@@ -3,7 +3,7 @@ export type GridPosition = {
   col: number;
 };
 
-export const GRID_ROWS = 8;
+export const GRID_ROWS = 6;
 export const GRID_COLS = 22;
 
 export function getNextPosition(

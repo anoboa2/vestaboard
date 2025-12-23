@@ -1,12 +1,13 @@
 "use client";
 
-import React, { useState, useCallback, useEffect } from "react";
+import React, { useState, useCallback, useEffect, useRef } from "react";
 import { GridCell } from "./GridCell";
 import { useKeyboardNavigation } from "./KeyboardHandler";
 import type { GridPosition } from "@/lib/grid-utils";
 import { GRID_ROWS, GRID_COLS, getCellId } from "@/lib/grid-utils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 import {
   Dialog,
   DialogContent,
@@ -15,13 +16,33 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
-import { sendGridToBackend, checkBackendStatus, getCurrentBoard } from "@/lib/api-client";
+import { Info, Type, Paintbrush, Trash2, Eraser } from "lucide-react";
+import { sendGridToBackend, checkBackendStatus, getCurrentBoard, deactivateInstallable } from "@/lib/api-client";
+import { decodeGrid, type DecodedCell } from "@/lib/vestaboard-codes";
+import { DisplayNameModal } from "./DisplayNameModal";
+import { hasDisplayName, getDisplayName, formatDisplayNameForRow, isDisplayNameCell } from "@/lib/display-name";
+
+// Supported colors for paint tool
+const SUPPORTED_COLORS = [
+  { name: 'red', displayName: 'Red', code: 'RED' },
+  { name: 'orange', displayName: 'Orange', code: 'ORANGE' },
+  { name: 'yellow', displayName: 'Yellow', code: 'YELLOW' },
+  { name: 'green', displayName: 'Green', code: 'GREEN' },
+  { name: 'blue', displayName: 'Blue', code: 'BLUE' },
+  { name: 'purple', displayName: 'Purple', code: 'PURPLE' },
+  { name: 'black', displayName: 'Black', code: 'BLACK' },
+];
 
 export const VestaboardGrid: React.FC = () => {
   const [grid, setGrid] = useState<string[][]>(
     Array(GRID_ROWS)
       .fill(null)
       .map(() => Array(GRID_COLS).fill(""))
+  );
+  const [gridColors, setGridColors] = useState<(string | null)[][]>(
+    Array(GRID_ROWS)
+      .fill(null)
+      .map(() => Array(GRID_COLS).fill(null))
   );
   const [focusedPosition, setFocusedPosition] = useState<GridPosition>({
     row: 0,
@@ -32,20 +53,181 @@ export const VestaboardGrid: React.FC = () => {
     type: "success" | "error" | null;
     message: string;
   }>({ type: null, message: "" });
-  const [isBackendOnline, setIsBackendOnline] = useState<boolean | null>(null);
+  const [backendStatus, setBackendStatus] = useState<"online" | "offline" | "quiet-hours" | null>(null);
   const [isLoadingBoard, setIsLoadingBoard] = useState(false);
+  const [lastEditTime, setLastEditTime] = useState<number | null>(null);
+  const [lastSyncedBoard, setLastSyncedBoard] = useState<string[][]>(
+    Array(GRID_ROWS)
+      .fill(null)
+      .map(() => Array(GRID_COLS).fill(""))
+  );
+  const [lastSyncedColors, setLastSyncedColors] = useState<(string | null)[][]>(
+    Array(GRID_ROWS)
+      .fill(null)
+      .map(() => Array(GRID_COLS).fill(null))
+  );
+  const [hasUserEdits, setHasUserEdits] = useState(false);
+  const [automatedMessageNotification, setAutomatedMessageNotification] = useState<string | null>(null);
+  const [showDisplayNameModal, setShowDisplayNameModal] = useState(false);
+  const [selectedTool, setSelectedTool] = useState<'text' | 'paint' | 'clear'>('text');
+  const [selectedColor, setSelectedColor] = useState<string | null>(null);
 
-  const loadCurrentBoard = useCallback(async () => {
-    setIsLoadingBoard(true);
+  // Refs to track current state values without creating dependency cycles
+  const gridRef = useRef(grid);
+  const gridColorsRef = useRef(gridColors);
+  const lastSyncedBoardRef = useRef(lastSyncedBoard);
+  const lastSyncedColorsRef = useRef(lastSyncedColors);
+  const hasUserEditsRef = useRef(hasUserEdits);
+  const lastEditTimeRef = useRef(lastEditTime);
+  const backendStatusRef = useRef(backendStatus);
+
+  // Update refs when state changes
+  useEffect(() => {
+    gridRef.current = grid;
+  }, [grid]);
+  useEffect(() => {
+    gridColorsRef.current = gridColors;
+  }, [gridColors]);
+  useEffect(() => {
+    lastSyncedBoardRef.current = lastSyncedBoard;
+  }, [lastSyncedBoard]);
+  useEffect(() => {
+    lastSyncedColorsRef.current = lastSyncedColors;
+  }, [lastSyncedColors]);
+  useEffect(() => {
+    hasUserEditsRef.current = hasUserEdits;
+  }, [hasUserEdits]);
+  useEffect(() => {
+    lastEditTimeRef.current = lastEditTime;
+  }, [lastEditTime]);
+  useEffect(() => {
+    backendStatusRef.current = backendStatus;
+  }, [backendStatus]);
+
+  // Compare two grids including colors
+  const compareGrids = useCallback((
+    grid1: string[][],
+    grid2: string[][],
+    colors1?: (string | null)[][],
+    colors2?: (string | null)[][]
+  ): boolean => {
+    if (grid1.length !== grid2.length) return false;
+    
+    for (let i = 0; i < grid1.length; i++) {
+      if (grid1[i].length !== grid2[i].length) return false;
+      
+      for (let j = 0; j < grid1[i].length; j++) {
+        // Normalize empty strings and spaces for comparison
+        const cell1 = (grid1[i][j] || '').trim() || '';
+        const cell2 = (grid2[i][j] || '').trim() || '';
+        
+        if (cell1 !== cell2) return false;
+        
+        // Compare colors if provided
+        if (colors1 && colors2) {
+          const color1 = colors1[i]?.[j] ?? null;
+          const color2 = colors2[i]?.[j] ?? null;
+          if (color1 !== color2) return false;
+        }
+      }
+    }
+    
+    return true;
+  }, []);
+
+  // Check if current grid differs from synced board
+  const checkForChanges = useCallback((): boolean => {
+    return !compareGrids(grid, lastSyncedBoard, gridColors, lastSyncedColors);
+  }, [grid, lastSyncedBoard, gridColors, lastSyncedColors, compareGrids]);
+
+  // Detect if automated update occurred while user was editing
+  const detectAutomatedUpdate = useCallback((
+    newBoard: string[][],
+    newColors: (string | null)[][]
+  ) => {
+    // Check if user has edits and the new board differs from current UI state
+    // Use refs to avoid dependency cycles
+    if (hasUserEditsRef.current) {
+      const boardDiffersFromUI = !compareGrids(gridRef.current, newBoard, gridColorsRef.current, newColors);
+      const boardDiffersFromSynced = !compareGrids(lastSyncedBoardRef.current, newBoard, lastSyncedColorsRef.current, newColors);
+      
+      // If new board differs from both UI and last synced, it's an automated update
+      if (boardDiffersFromUI && boardDiffersFromSynced) {
+        setAutomatedMessageNotification(
+          "A new automated message was sent to the board. You can send your edited message or refresh to sync with the board."
+        );
+      }
+    }
+  }, [compareGrids]);
+
+  const loadCurrentBoard = useCallback(async (showLoading: boolean = false) => {
+    if (showLoading) {
+      setIsLoadingBoard(true);
+    }
     try {
       const result = await getCurrentBoard();
-      console.log("getCurrentBoard result:", result);
-      if (result.success && result.grid) {
-        console.log("Loading grid with", result.grid.length, "rows");
-        // Ensure grid has correct dimensions (8 rows x 22 cols)
+      
+      // Prefer gridCodes if available (new approach - decode on frontend)
+      if (result.success && result.gridCodes && Array.isArray(result.gridCodes)) {
+        if (process.env.NODE_ENV === 'development') {
+          console.debug("Loading grid with character codes,", result.gridCodes.length, "rows");
+        }
+        
+        // Decode character codes to characters and colors on the frontend
+        const decodedGrid = decodeGrid(result.gridCodes);
+        
+        // Ensure grid has correct dimensions (6 rows x 22 cols)
+        const loadedGrid: string[][] = [];
+        const loadedColors: (string | null)[][] = [];
+        
+        for (let i = 0; i < GRID_ROWS; i++) {
+          const row = Array.isArray(decodedGrid[i]) ? decodedGrid[i] : [];
+          const paddedRow: DecodedCell[] = [...row];
+          // Pad row to 22 columns if needed
+          while (paddedRow.length < GRID_COLS) {
+            paddedRow.push({ char: ' ', color: null });
+          }
+          // Truncate if longer
+          const finalRow = paddedRow.slice(0, GRID_COLS);
+          // For colored cells, store the color code name (e.g., 'RED') instead of '█'
+          // This ensures we can send it back to the backend correctly
+          loadedGrid.push(finalRow.map(cell => {
+            if (cell.color) {
+              // Find the color code name for this color
+              const colorInfo = SUPPORTED_COLORS.find(c => c.name === cell.color);
+              return colorInfo ? colorInfo.code : (cell.char || ' ');
+            }
+            return cell.char || ' ';
+          }));
+          loadedColors.push(finalRow.map(cell => cell.color || null));
+        }
+        
+        if (process.env.NODE_ENV === 'development') {
+          console.debug("Decoded grid with colors:", loadedGrid);
+        }
+        
+        // Detect automated updates before updating state
+        detectAutomatedUpdate(loadedGrid, loadedColors);
+        
+        // Only auto-sync if user hasn't edited recently (existing behavior)
+        const timeSinceLastEdit = lastEditTimeRef.current ? Date.now() - lastEditTimeRef.current : Infinity;
+        if (timeSinceLastEdit > 30000) {
+          setGrid(loadedGrid);
+          setGridColors(loadedColors);
+          setHasUserEdits(false);
+        }
+        
+        // Always update synced state to track physical board
+        setLastSyncedBoard(loadedGrid.map(row => [...row]));
+        setLastSyncedColors(loadedColors.map(row => [...row]));
+      } else if (result.success && result.grid && Array.isArray(result.grid)) {
+        // Fallback to plain grid (backward compatibility)
+        if (process.env.NODE_ENV === 'development') {
+          console.debug("Loading grid without codes (fallback),", result.grid.length, "rows");
+        }
         const loadedGrid: string[][] = [];
         for (let i = 0; i < GRID_ROWS; i++) {
-          const row = result.grid[i] || [];
+          const row = Array.isArray(result.grid[i]) ? result.grid[i] : [];
           const paddedRow = [...row];
           // Pad row to 22 columns if needed
           while (paddedRow.length < GRID_COLS) {
@@ -54,24 +236,65 @@ export const VestaboardGrid: React.FC = () => {
           // Truncate if longer
           loadedGrid.push(paddedRow.slice(0, GRID_COLS));
         }
-        console.log("Setting grid:", loadedGrid);
-        setGrid(loadedGrid);
+        if (process.env.NODE_ENV === 'development') {
+          console.debug("Setting grid (no colors):", loadedGrid);
+        }
+        
+        // Clear colors when using fallback
+        const emptyColors = Array(GRID_ROWS).fill(null).map(() => Array(GRID_COLS).fill(null));
+        
+        // Detect automated updates before updating state
+        detectAutomatedUpdate(loadedGrid, emptyColors);
+        
+        // Only auto-sync if user hasn't edited recently (existing behavior)
+        const timeSinceLastEdit = lastEditTimeRef.current ? Date.now() - lastEditTimeRef.current : Infinity;
+        if (timeSinceLastEdit > 30000) {
+          setGrid(loadedGrid);
+          setGridColors(emptyColors);
+          setHasUserEdits(false);
+        }
+        
+        // Always update synced state to track physical board
+        setLastSyncedBoard(loadedGrid.map(row => [...row]));
+        setLastSyncedColors(emptyColors.map(row => [...row]));
       } else {
-        console.warn("getCurrentBoard returned unsuccessful result:", result);
+        // Only warn in development mode
+        if (process.env.NODE_ENV === 'development') {
+          console.debug("getCurrentBoard returned unsuccessful result:", result);
+        }
       }
     } catch (error) {
-      console.error("Error loading current board:", error);
+      // Only log non-network errors (backend offline is expected)
+      if (!(error instanceof TypeError && error.message === 'Failed to fetch')) {
+        if (process.env.NODE_ENV === 'development') {
+          console.debug("Error loading current board:", error);
+        }
+      }
     } finally {
-      setIsLoadingBoard(false);
+      if (showLoading) {
+        setIsLoadingBoard(false);
+      }
     }
-  }, []);
+  }, [detectAutomatedUpdate]);
 
   const updateCell = useCallback((row: number, col: number, value: string) => {
+    // Prevent editing display name cells
+    const displayName = getDisplayName();
+    if (isDisplayNameCell(row, col, displayName, GRID_COLS, GRID_ROWS)) {
+      return;
+    }
+    
     setGrid((prev) => {
       const newGrid = prev.map((r) => [...r]);
       newGrid[row][col] = value;
       return newGrid;
     });
+    // Track when user last edited to prevent auto-refresh from overwriting edits
+    setLastEditTime(Date.now());
+    // Mark that user has made edits
+    setHasUserEdits(true);
+    // Clear automated message notification when user edits (they're taking action)
+    setAutomatedMessageNotification(null);
   }, []);
 
   const clearCell = useCallback(() => {
@@ -81,139 +304,443 @@ export const VestaboardGrid: React.FC = () => {
   const { handleKeyDown } = useKeyboardNavigation({
     currentPosition: focusedPosition,
     grid,
-    onPositionChange: setFocusedPosition,
+    onPositionChange: (pos) => {
+      // Skip display name cells when navigating - if navigation tries to move to a display name cell,
+      // move to the cell just before the display name area instead
+      const displayName = getDisplayName();
+      if (isDisplayNameCell(pos.row, pos.col, displayName, GRID_COLS, GRID_ROWS)) {
+        const bottomRowIndex = GRID_ROWS - 1;
+        if (pos.row === bottomRowIndex) {
+          const signatureLength = displayName ? `-${displayName}`.length : 0;
+          const displayNameStart = GRID_COLS - signatureLength;
+          // Move to just before the display name area (or wrap to previous row if at start)
+          if (displayNameStart > 0) {
+            setFocusedPosition({ row: pos.row, col: displayNameStart - 1 });
+          } else {
+            // If display name takes entire row, move to previous row's last editable cell
+            if (pos.row > 0) {
+              setFocusedPosition({ row: pos.row - 1, col: GRID_COLS - 1 });
+            }
+          }
+          return;
+        }
+      }
+      setFocusedPosition(pos);
+    },
     onClearCell: clearCell,
   });
 
   const handleCellChange = useCallback(
     (row: number, col: number) => (value: string) => {
-      updateCell(row, col, value);
-      // Auto-advance to next cell after typing
-      if (value && col < GRID_COLS - 1) {
-        setFocusedPosition({ row, col: col + 1 });
-      } else if (value && row < GRID_ROWS - 1) {
-        setFocusedPosition({ row: row + 1, col: 0 });
+      // Only allow text input in text mode
+      if (selectedTool === 'text') {
+        // Clear color when typing text over a colored cell
+        if (gridColors[row]?.[col]) {
+          setGridColors((prev) => {
+            const newColors = prev.map((r) => [...r]);
+            newColors[row][col] = null;
+            return newColors;
+          });
+        }
+        updateCell(row, col, value);
+        // Auto-advance to next cell after typing
+        if (value && col < GRID_COLS - 1) {
+          setFocusedPosition({ row, col: col + 1 });
+        } else if (value && row < GRID_ROWS - 1) {
+          setFocusedPosition({ row: row + 1, col: 0 });
+        }
       }
     },
-    [updateCell]
+    [updateCell, selectedTool, gridColors]
+  );
+
+  // Paint a cell with selected color or erase it
+  const paintCell = useCallback((row: number, col: number) => {
+    // Prevent painting display name cells
+    const displayName = getDisplayName();
+    if (isDisplayNameCell(row, col, displayName, GRID_COLS, GRID_ROWS)) {
+      return;
+    }
+
+    if (selectedColor === null) {
+      // Erase mode: clear both color and text
+      setGrid((prev) => {
+        const newGrid = prev.map((r) => [...r]);
+        newGrid[row][col] = "";
+        return newGrid;
+      });
+      setGridColors((prev) => {
+        const newColors = prev.map((r) => [...r]);
+        newColors[row][col] = null;
+        return newColors;
+      });
+    } else {
+      // Paint mode: set color name in grid and color in gridColors
+      const colorInfo = SUPPORTED_COLORS.find(c => c.name === selectedColor);
+      if (colorInfo) {
+        setGrid((prev) => {
+          const newGrid = prev.map((r) => [...r]);
+          newGrid[row][col] = colorInfo.code;
+          return newGrid;
+        });
+        setGridColors((prev) => {
+          const newColors = prev.map((r) => [...r]);
+          newColors[row][col] = selectedColor;
+          return newColors;
+        });
+      }
+    }
+    // Track when user last edited
+    setLastEditTime(Date.now());
+    setHasUserEdits(true);
+    setAutomatedMessageNotification(null);
+  }, [selectedColor]);
+
+  const handleCellClick = useCallback(
+    (row: number, col: number) => () => {
+      // In paint mode, paint the cell instead of focusing
+      if (selectedTool === 'paint') {
+        paintCell(row, col);
+      }
+    },
+    [selectedTool, paintCell]
   );
 
   const handleCellFocus = useCallback(
     (row: number, col: number) => () => {
-      setFocusedPosition({ row, col });
+      // Prevent focusing on display name cells
+      const displayName = getDisplayName();
+      if (!isDisplayNameCell(row, col, displayName, GRID_COLS, GRID_ROWS)) {
+        setFocusedPosition({ row, col });
+      }
     },
     []
   );
 
+  const handleRefreshBoard = useCallback(async () => {
+    // Clear notification when user manually refreshes
+    setAutomatedMessageNotification(null);
+    setIsLoadingBoard(true);
+    try {
+      const result = await getCurrentBoard();
+      
+      // Prefer gridCodes if available (new approach - decode on frontend)
+      if (result.success && result.gridCodes && Array.isArray(result.gridCodes)) {
+        // Decode character codes to characters and colors on the frontend
+        const decodedGrid = decodeGrid(result.gridCodes);
+        
+        // Ensure grid has correct dimensions (6 rows x 22 cols)
+        const loadedGrid: string[][] = [];
+        const loadedColors: (string | null)[][] = [];
+        
+        for (let i = 0; i < GRID_ROWS; i++) {
+          const row = Array.isArray(decodedGrid[i]) ? decodedGrid[i] : [];
+          const paddedRow: DecodedCell[] = [...row];
+          // Pad row to 22 columns if needed
+          while (paddedRow.length < GRID_COLS) {
+            paddedRow.push({ char: ' ', color: null });
+          }
+          // Truncate if longer
+          const finalRow = paddedRow.slice(0, GRID_COLS);
+          // For colored cells, store the color code name (e.g., 'RED') instead of '█'
+          // This ensures we can send it back to the backend correctly
+          loadedGrid.push(finalRow.map(cell => {
+            if (cell.color) {
+              // Find the color code name for this color
+              const colorInfo = SUPPORTED_COLORS.find(c => c.name === cell.color);
+              return colorInfo ? colorInfo.code : (cell.char || ' ');
+            }
+            return cell.char || ' ';
+          }));
+          loadedColors.push(finalRow.map(cell => cell.color || null));
+        }
+        
+        // Force update grid when user manually refreshes
+        setGrid(loadedGrid);
+        setGridColors(loadedColors);
+        setHasUserEdits(false);
+        // Update synced state
+        setLastSyncedBoard(loadedGrid.map(row => [...row]));
+        setLastSyncedColors(loadedColors.map(row => [...row]));
+      } else if (result.success && result.grid && Array.isArray(result.grid)) {
+        // Fallback to plain grid (backward compatibility)
+        const loadedGrid: string[][] = [];
+        for (let i = 0; i < GRID_ROWS; i++) {
+          const row = Array.isArray(result.grid[i]) ? result.grid[i] : [];
+          const paddedRow = [...row];
+          // Pad row to 22 columns if needed
+          while (paddedRow.length < GRID_COLS) {
+            paddedRow.push('');
+          }
+          // Truncate if longer
+          loadedGrid.push(paddedRow.slice(0, GRID_COLS));
+        }
+        
+        // Clear colors when using fallback
+        const emptyColors = Array(GRID_ROWS).fill(null).map(() => Array(GRID_COLS).fill(null));
+        
+        // Force update grid when user manually refreshes
+        setGrid(loadedGrid);
+        setGridColors(emptyColors);
+        setHasUserEdits(false);
+        // Update synced state
+        setLastSyncedBoard(loadedGrid.map(row => [...row]));
+        setLastSyncedColors(emptyColors.map(row => [...row]));
+      }
+    } catch (error) {
+      // Only log non-network errors (backend offline is expected)
+      if (!(error instanceof TypeError && error.message === 'Failed to fetch')) {
+        if (process.env.NODE_ENV === 'development') {
+          console.debug("Error loading current board:", error);
+        }
+      }
+    } finally {
+      setIsLoadingBoard(false);
+    }
+  }, []);
+
   const clearGrid = useCallback(() => {
-    setGrid(Array(GRID_ROWS).fill(null).map(() => Array(GRID_COLS).fill("")));
+    const emptyGrid = Array(GRID_ROWS).fill(null).map(() => Array(GRID_COLS).fill(""));
+    const emptyColors = Array(GRID_ROWS).fill(null).map(() => Array(GRID_COLS).fill(null));
+    setGrid(emptyGrid);
+    setGridColors(emptyColors);
     setFocusedPosition({ row: 0, col: 0 });
+    // Don't update sync state on clear - user may want to send empty board
+    setHasUserEdits(true);
+    // Update last edit time to prevent polling from overwriting the cleared grid
+    setLastEditTime(Date.now());
+  }, []);
+
+  // Handle tool selection
+  const handleToolSelect = useCallback((tool: 'text' | 'paint' | 'clear') => {
+    if (tool === 'clear') {
+      clearGrid();
+      // Reset to text tool after clearing
+      setSelectedTool('text');
+    } else {
+      setSelectedTool(tool);
+      // Reset selected color when switching away from paint tool
+      if (tool !== 'paint') {
+        setSelectedColor(null);
+      }
+    }
+  }, [clearGrid]);
+
+  // Handle color selection in paint mode
+  const handleColorSelect = useCallback((color: string | null) => {
+    setSelectedColor(color);
   }, []);
 
   const handleSendToVestaboard = useCallback(async () => {
+    console.log("handleSendToVestaboard called");
     setIsSending(true);
     setSendStatus({ type: null, message: "" });
+    let shouldClearMessage = false;
+
+    // Get display name and format for bottom row
+    const displayName = getDisplayName();
+    let gridToSend = grid.map(row => [...row]); // Create a copy
+    
+    if (displayName) {
+      // Replace bottom row (row 5, index GRID_ROWS - 1) with formatted display name
+      const bottomRowIndex = GRID_ROWS - 1;
+      const formattedName = formatDisplayNameForRow(displayName, GRID_COLS);
+      // Convert formatted string to array of characters (formattedName is already exactly GRID_COLS length)
+      gridToSend[bottomRowIndex] = formattedName.split("").slice(0, GRID_COLS);
+    }
 
     try {
-      const result = await sendGridToBackend(grid);
+      // Deactivate any active installable first to prevent overwriting the user's message
+      console.log("Deactivating installable...");
+      const deactivateResult = await deactivateInstallable();
+      if (!deactivateResult.success) {
+        console.warn("Failed to deactivate installable (non-fatal):", deactivateResult.error);
+      } else {
+        console.log("Installable deactivated successfully");
+      }
+
+      // Send grid to backend
+      console.log("Sending grid to backend...");
+      const result = await sendGridToBackend(gridToSend);
+      console.log("Send result:", result);
+      
       if (result.success) {
+        console.log("Grid sent successfully!");
+        // Reset to online status on successful send (if we were in quiet-hours, this clears it)
+        setBackendStatus("online");
         setSendStatus({
           type: "success",
           message: result.message || "Grid sent successfully!",
         });
+        // Update synced state to match sent grid (use gridToSend which includes display name)
+        setLastSyncedBoard(gridToSend.map(row => [...row]));
+        setLastSyncedColors(gridColors.map(row => [...row]));
+        // Reset user edits flag
+        setHasUserEdits(false);
+        // Clear automated message notification
+        setAutomatedMessageNotification(null);
+        shouldClearMessage = true;
       } else {
+        const errorMessage = result.error || "Failed to send grid";
+        console.error("Failed to send grid - setting error status:", errorMessage);
+        
+        // Check if error is related to Quiet Hours
+        if (errorMessage.toLowerCase().includes("quiet hours")) {
+          setBackendStatus("quiet-hours");
+        }
+        
         setSendStatus({
           type: "error",
-          message: result.error || "Failed to send grid",
+          message: errorMessage,
         });
+        // Don't clear error message automatically - let user see it
       }
     } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : "Failed to send grid";
+      console.error("Exception in handleSendToVestaboard:", error);
       setSendStatus({
         type: "error",
-        message:
-          error instanceof Error ? error.message : "Failed to send grid",
+        message: errorMessage,
       });
+      // Don't clear error message automatically - let user see it
     } finally {
       setIsSending(false);
-      // Clear status message after 3 seconds
-      setTimeout(() => {
-        setSendStatus({ type: null, message: "" });
-      }, 3000);
+      // Only clear success messages after 3 seconds, not errors
+      if (shouldClearMessage) {
+        setTimeout(() => {
+          setSendStatus({ type: null, message: "" });
+        }, 3000);
+      }
     }
-  }, [grid]);
+  }, [grid, gridColors]);
+
+  // Check for display name on mount
+  useEffect(() => {
+    if (!hasDisplayName()) {
+      setShowDisplayNameModal(true);
+    }
+  }, []);
+
+  // Handle display name being set
+  const handleDisplayNameSet = useCallback((name: string) => {
+    setShowDisplayNameModal(false);
+    // Update the bottom row with the display name
+    const bottomRowIndex = GRID_ROWS - 1;
+    const formattedName = formatDisplayNameForRow(name, GRID_COLS);
+    setGrid((prev) => {
+      const newGrid = prev.map((r) => [...r]);
+      newGrid[bottomRowIndex] = formattedName.split("").slice(0, GRID_COLS);
+      return newGrid;
+    });
+  }, []);
+
+  // Sync display name to grid whenever it changes (e.g., after load or when display name is set)
+  useEffect(() => {
+    const displayName = getDisplayName();
+    if (displayName) {
+      const bottomRowIndex = GRID_ROWS - 1;
+      const formattedName = formatDisplayNameForRow(displayName, GRID_COLS);
+      setGrid((prev) => {
+        const newGrid = prev.map((r) => [...r]);
+        // Only update the display name cells (right side), preserve user content on the left
+        const signatureChars = formattedName.split("");
+        const signatureStart = GRID_COLS - signatureChars.length;
+        // Update only the cells that should contain the display name
+        for (let i = signatureStart; i < GRID_COLS; i++) {
+          newGrid[bottomRowIndex][i] = signatureChars[i - signatureStart] || " ";
+        }
+        return newGrid;
+      });
+    }
+  }, [showDisplayNameModal]); // Run when modal closes (display name is set)
 
   // Check backend status and load current board on mount
   useEffect(() => {
+    // Don't check backend if display name modal is showing (wait for user to set name)
+    if (showDisplayNameModal) {
+      return;
+    }
+
     const checkStatus = async () => {
       const status = await checkBackendStatus();
-      setIsBackendOnline(status);
-      console.log(`Backend status check: ${status ? "online" : "offline"}`);
+      setBackendStatus(status ? "online" : "offline");
+      if (process.env.NODE_ENV === 'development') {
+        console.debug(`Backend status check: ${status ? "online" : "offline"}`);
+      }
       return status;
     };
 
     // Check status and load board if online
     checkStatus().then((isOnline) => {
       if (isOnline) {
-        loadCurrentBoard();
+        // Don't show loading spinner on initial load, only on manual refresh
+        loadCurrentBoard(false);
       }
     });
 
-    // Check every 5 seconds
+    // Poll for board updates every 5 seconds
+    // Always poll to detect automated updates, but only auto-sync if user hasn't edited recently
     const interval = setInterval(async () => {
       const isOnline = await checkStatus();
       if (isOnline) {
-        // Optionally reload board periodically (commented out to avoid overwriting user edits)
-        // loadCurrentBoard();
+        // Always call loadCurrentBoard to check for automated updates
+        // The function itself handles whether to auto-sync based on lastEditTime
+        // Don't show loading spinner for automatic polling
+        loadCurrentBoard(false);
       }
     }, 5000);
 
     return () => clearInterval(interval);
-  }, [loadCurrentBoard]);
+  }, [loadCurrentBoard, showDisplayNameModal]);
 
   return (
-    <div className="w-full space-y-6">
-      <Card>
+    <>
+      <DisplayNameModal
+        open={showDisplayNameModal}
+        onNameSet={handleDisplayNameSet}
+      />
+      <div className="w-full space-y-6">
+        <Card>
         <CardHeader>
           <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <CardTitle>Vestaboard Grid</CardTitle>
-              {isBackendOnline !== null && (
-                <div
-                  className={`w-2 h-2 rounded-full ${
-                    isBackendOnline
-                      ? "bg-green-500 animate-pulse"
-                      : "bg-red-500"
-                  }`}
-                  title={
-                    isBackendOnline
-                      ? "Backend is online"
-                      : "Backend is offline"
-                  }
-                />
-              )}
-            </div>
-            <div className="flex gap-2">
-              <Button
-                onClick={handleSendToVestaboard}
-                disabled={isSending}
-                variant="default"
-              >
-                {isSending ? "Sending..." : "Send to Vestaboard"}
-              </Button>
-              {sendStatus.type && (
-                <div
-                  className={`px-3 py-1 rounded text-sm ${
-                    sendStatus.type === "success"
-                      ? "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200"
-                      : "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200"
-                  }`}
-                >
-                  {sendStatus.message}
-                </div>
-              )}
+            <div className="flex flex-col gap-2">
+              <div className="flex items-center gap-2">
+                <CardTitle>Vestaboard Grid</CardTitle>
+                {backendStatus !== null && (
+                  <div className="flex items-center gap-2">
+                    <div
+                      className={`w-2 h-2 rounded-full ${
+                        backendStatus === "online"
+                          ? "bg-green-500 animate-pulse"
+                          : backendStatus === "quiet-hours"
+                          ? "bg-yellow-500"
+                          : "bg-red-500"
+                      }`}
+                      title={
+                        backendStatus === "online"
+                          ? "Backend is online"
+                          : backendStatus === "quiet-hours"
+                          ? "Quiet Hours enabled"
+                          : "Backend is offline"
+                      }
+                    />
+                    {backendStatus === "quiet-hours" && (
+                      <span className="text-sm text-yellow-600 dark:text-yellow-400 font-medium">
+                        Quiet Hours
+                      </span>
+                    )}
+                  </div>
+                )}
+              </div>
               <Dialog>
                 <DialogTrigger asChild>
-                  <Button variant="outline">Keyboard Shortcuts</Button>
+                  <button
+                    type="button"
+                    className="inline-flex items-center text-muted-foreground hover:text-foreground transition-colors"
+                    aria-label="Keyboard shortcuts"
+                  >
+                    <Info className="h-4 w-4" />
+                  </button>
                 </DialogTrigger>
                 <DialogContent>
                   <DialogHeader>
@@ -334,54 +861,191 @@ export const VestaboardGrid: React.FC = () => {
                   </div>
                 </DialogContent>
               </Dialog>
-              <Button
-                variant="outline"
-                onClick={loadCurrentBoard}
-                disabled={isLoadingBoard || !isBackendOnline}
-              >
-                {isLoadingBoard ? "Loading..." : "Refresh Board"}
-              </Button>
-              <Button variant="outline" onClick={clearGrid}>
-                Clear Grid
-              </Button>
+            </div>
+            <div className="flex gap-2">
+              {sendStatus.type && (
+                <div
+                  className={`px-3 py-1 rounded text-sm ${
+                    sendStatus.type === "success"
+                      ? "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200"
+                      : "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200"
+                  }`}
+                >
+                  {sendStatus.message}
+                </div>
+              )}
+              {checkForChanges() ? (
+                <Button
+                  onClick={handleSendToVestaboard}
+                  disabled={isSending}
+                  variant="default"
+                >
+                  {isSending ? "Sending..." : "Send to Vestaboard"}
+                </Button>
+              ) : (
+                <Button
+                  disabled
+                  variant="default"
+                >
+                  No changes to send
+                </Button>
+              )}
+              <div className="flex flex-col gap-1">
+                <Button
+                  variant="outline"
+                  onClick={handleRefreshBoard}
+                  disabled={isLoadingBoard || backendStatus !== "online"}
+                >
+                  Refresh Board
+                </Button>
+                {isLoadingBoard && (
+                  <div className="flex justify-center">
+                    <div className="w-4 h-4 border-2 border-muted-foreground border-t-transparent rounded-full animate-spin"></div>
+                  </div>
+                )}
+                {automatedMessageNotification && (
+                  <p className="text-xs text-muted-foreground max-w-[200px]">
+                    {automatedMessageNotification}
+                  </p>
+                )}
+              </div>
             </div>
           </div>
         </CardHeader>
         <CardContent>
           <div className="w-full overflow-x-auto">
-            <div
-              className="inline-grid gap-1 p-4 bg-muted/20 rounded-lg"
-              style={{
-                gridTemplateColumns: `repeat(${GRID_COLS}, minmax(0, 1fr))`,
-                gridTemplateRows: `repeat(${GRID_ROWS}, minmax(0, 1fr))`,
-              }}
-            >
-              {grid.map((row, rowIndex) =>
-                row.map((cell, colIndex) => (
-                  <div
-                    key={getCellId(rowIndex, colIndex)}
-                    className="aspect-square min-w-[2.5rem] min-h-[2.5rem]"
+            <div className="flex gap-4">
+              {/* Tools Panel */}
+              <div className="flex-shrink-0 w-16 flex flex-col gap-3 items-center">
+                {/* Tool Buttons */}
+                <div className="flex flex-col gap-2 items-center">
+                  <Button
+                    variant={selectedTool === 'text' ? 'default' : 'outline'}
+                    onClick={() => handleToolSelect('text')}
+                    className="w-12 h-12 p-0"
+                    size="icon"
+                    title="Text Tool"
+                    aria-label="Text Tool"
                   >
-                    <GridCell
-                      value={cell}
-                      isFocused={
-                        focusedPosition.row === rowIndex &&
-                        focusedPosition.col === colIndex
-                      }
-                      row={rowIndex}
-                      col={colIndex}
-                      onFocus={handleCellFocus(rowIndex, colIndex)}
-                      onChange={handleCellChange(rowIndex, colIndex)}
-                      onKeyDown={handleKeyDown}
-                    />
+                    <Type className="h-4 w-4" />
+                  </Button>
+                  <Button
+                    variant={selectedTool === 'paint' ? 'default' : 'outline'}
+                    onClick={() => handleToolSelect('paint')}
+                    className="w-12 h-12 p-0"
+                    size="icon"
+                    title="Paint Tool"
+                    aria-label="Paint Tool"
+                  >
+                    <Paintbrush className="h-4 w-4" />
+                  </Button>
+                  <Button
+                    variant={selectedTool === 'clear' ? 'default' : 'outline'}
+                    onClick={() => handleToolSelect('clear')}
+                    className="w-12 h-12 p-0"
+                    size="icon"
+                    title="Clear Grid"
+                    aria-label="Clear Grid"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                </div>
+
+                {/* Color Palette - shown when paint tool is selected */}
+                {selectedTool === 'paint' && (
+                  <div className="mt-2 flex justify-center">
+                    <div className="grid grid-cols-2 gap-1.5">
+                      {SUPPORTED_COLORS.map((color) => (
+                        <button
+                          key={color.name}
+                          type="button"
+                          onClick={() => handleColorSelect(color.name)}
+                          className={cn(
+                            "aspect-square rounded border-2 transition-all w-6 h-6",
+                            selectedColor === color.name
+                              ? "border-primary scale-110 shadow-md ring-2 ring-primary ring-offset-1"
+                              : "border-border hover:border-primary/50",
+                            // Color swatches
+                            color.name === 'red' && "bg-red-600",
+                            color.name === 'orange' && "bg-orange-500",
+                            color.name === 'yellow' && "bg-yellow-500",
+                            color.name === 'green' && "bg-green-600",
+                            color.name === 'blue' && "bg-blue-600",
+                            color.name === 'purple' && "bg-purple-600",
+                            color.name === 'black' && "bg-black"
+                          )}
+                          title={color.displayName}
+                          aria-label={`Select ${color.displayName} color`}
+                        />
+                      ))}
+                      {/* Erase Option */}
+                      <button
+                        type="button"
+                        onClick={() => handleColorSelect(null)}
+                          className={cn(
+                            "aspect-square rounded border-2 transition-all w-6 h-6 flex items-center justify-center",
+                            selectedColor === null
+                              ? "border-primary bg-primary text-primary-foreground ring-2 ring-primary ring-offset-1"
+                              : "border-border hover:border-primary/50 bg-background"
+                          )}
+                        title="Erase"
+                        aria-label="Erase"
+                      >
+                        <Eraser className="h-3 w-3" />
+                      </button>
+                    </div>
                   </div>
-                ))
+                )}
+              </div>
+
+              {/* Grid */}
+              <div className="flex-1">
+                <div
+                  className="inline-grid gap-0.5 p-4 bg-muted/20 rounded-lg"
+                  style={{
+                    gridTemplateColumns: `repeat(${GRID_COLS}, minmax(0, 1fr))`,
+                    gridTemplateRows: `repeat(${GRID_ROWS}, minmax(0, 1fr))`,
+                  }}
+                >
+              {grid.map((row, rowIndex) =>
+                row.map((cell, colIndex) => {
+                  const displayName = getDisplayName();
+                  const isDisplayName = isDisplayNameCell(rowIndex, colIndex, displayName, GRID_COLS, GRID_ROWS);
+                  const cellColor = gridColors[rowIndex]?.[colIndex] || null;
+                  // If cell has a color, display '█' instead of the color code name
+                  const displayValue = cellColor ? '█' : cell;
+                  return (
+                    <div
+                      key={getCellId(rowIndex, colIndex)}
+                      className="aspect-square min-w-[2.5rem] min-h-[2.5rem]"
+                    >
+                      <GridCell
+                        value={displayValue}
+                        color={cellColor}
+                        isFocused={
+                          focusedPosition.row === rowIndex &&
+                          focusedPosition.col === colIndex
+                        }
+                        row={rowIndex}
+                        col={colIndex}
+                        onFocus={handleCellFocus(rowIndex, colIndex)}
+                        onChange={handleCellChange(rowIndex, colIndex)}
+                        onClick={selectedTool === 'paint' ? handleCellClick(rowIndex, colIndex) : undefined}
+                        onKeyDown={handleKeyDown}
+                        disabled={isDisplayName}
+                      />
+                    </div>
+                  );
+                })
               )}
+                </div>
+              </div>
             </div>
           </div>
         </CardContent>
       </Card>
-    </div>
+      </div>
+    </>
   );
 };
 

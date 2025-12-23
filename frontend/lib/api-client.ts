@@ -1,8 +1,8 @@
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
-// Log the API base URL on module load (for debugging)
-if (typeof window !== "undefined") {
-  console.log(`API Base URL configured: ${API_BASE_URL}`);
+// Log the API base URL on module load (for debugging in development only)
+if (typeof window !== "undefined" && process.env.NODE_ENV === 'development') {
+  console.debug(`API Base URL configured: ${API_BASE_URL}`);
 }
 
 export interface GridData {
@@ -13,6 +13,8 @@ export interface ApiResponse {
   success: boolean;
   message?: string;
   error?: string;
+  grid?: string[][];  // Backward compatibility
+  gridCodes?: number[][];  // Raw character codes for frontend decoding
 }
 
 export interface InstallableInfo {
@@ -31,6 +33,12 @@ export async function sendGridToBackend(
   grid: string[][]
 ): Promise<ApiResponse> {
   try {
+    console.log("Sending grid to backend:", { 
+      rows: grid.length, 
+      cols: grid[0]?.length,
+      url: `${API_BASE_URL}/api/vestaboard/send`
+    });
+    
     const response = await fetch(`${API_BASE_URL}/api/vestaboard/send`, {
       method: "POST",
       headers: {
@@ -39,22 +47,43 @@ export async function sendGridToBackend(
       body: JSON.stringify({ grid }),
     });
 
+    console.log("Response status:", response.status, response.statusText);
+
     if (!response.ok) {
-      const errorData = await response.json().catch(() => ({
-        error: "Failed to send grid to backend",
-      }));
+      let errorData;
+      try {
+        errorData = await response.json();
+        console.error("Error response data:", errorData);
+      } catch (jsonError) {
+        const text = await response.text().catch(() => "Failed to read response");
+        console.error("Error response text:", text);
+        errorData = { detail: text || "Failed to send grid to backend" };
+      }
+      // FastAPI returns errors in 'detail' field, not 'error'
+      const errorMessage = errorData.detail || errorData.error || `HTTP error! status: ${response.status}`;
+      console.error("Sending error response:", errorMessage);
       return {
         success: false,
-        error: errorData.error || `HTTP error! status: ${response.status}`,
+        error: errorMessage,
       };
     }
 
-    const data = await response.json();
-    return {
-      success: true,
-      message: data.message || "Grid sent successfully",
-    };
+    try {
+      const data = await response.json();
+      console.log("Success response data:", data);
+      return {
+        success: true,
+        message: data.message || "Grid sent successfully",
+      };
+    } catch (jsonError) {
+      console.error("Failed to parse success response:", jsonError);
+      return {
+        success: false,
+        error: "Failed to parse response from server",
+      };
+    }
   } catch (error) {
+    console.error("Network/fetch error:", error);
     return {
       success: false,
       error:
@@ -63,7 +92,7 @@ export async function sendGridToBackend(
   }
 }
 
-export async function getCurrentBoard(): Promise<ApiResponse & { grid?: string[][] }> {
+export async function getCurrentBoard(): Promise<ApiResponse> {
   try {
     const response = await fetch(`${API_BASE_URL}/api/vestaboard/current`, {
       method: "GET",
@@ -83,15 +112,26 @@ export async function getCurrentBoard(): Promise<ApiResponse & { grid?: string[]
       };
     }
 
-    const data = await response.json();
-    console.log("getCurrentBoard API response:", data);
-    
-    // Always return success with grid, even if it's empty
-    return {
-      success: true,
-      grid: data.grid || [],
-      message: data.message || "Board fetched successfully",
-    };
+    try {
+      const data = await response.json();
+      if (process.env.NODE_ENV === 'development') {
+        console.log("getCurrentBoard API response:", data);
+      }
+      
+      // Always return success with grid, even if it's empty
+      return {
+        success: true,
+        grid: data.grid || [],
+        gridCodes: data.gridCodes || undefined, // Include gridCodes if available
+        message: data.message || "Board fetched successfully",
+      };
+    } catch (jsonError) {
+      console.error("getCurrentBoard JSON parse error:", jsonError);
+      return {
+        success: false,
+        error: "Failed to parse response from server",
+      };
+    }
   } catch (error) {
     console.error("getCurrentBoard exception:", error);
     return {
@@ -106,7 +146,9 @@ export async function getCurrentBoard(): Promise<ApiResponse & { grid?: string[]
 
 export async function checkBackendStatus(): Promise<boolean> {
   const url = `${API_BASE_URL}/`;
-  console.log(`Checking backend status at: ${url}`);
+  if (process.env.NODE_ENV === 'development') {
+    console.debug(`Checking backend status at: ${url}`);
+  }
   
   try {
     const response = await fetch(url, {
@@ -126,17 +168,34 @@ export async function checkBackendStatus(): Promise<boolean> {
       return false;
     }
     
-    const data = await response.json();
-    // Verify we got the expected response
-    if (data && data.message === "Vestaboard API") {
-      console.log(`Backend is online at ${url}`);
-      return true;
+    // Check if response is JSON before parsing
+    const contentType = response.headers.get("content-type");
+    if (!contentType || !contentType.includes("application/json")) {
+      console.warn(`Backend returned non-JSON response: ${contentType}`);
+      return false;
     }
-    console.warn(`Backend returned unexpected response:`, data);
-    return false;
+    
+    try {
+      const data = await response.json();
+      // Verify we got the expected response
+      if (data && data.message === "Vestaboard API") {
+        if (process.env.NODE_ENV === 'development') {
+          console.debug(`Backend is online at ${url}`);
+        }
+        return true;
+      }
+      console.warn(`Backend returned unexpected response:`, data);
+      return false;
+    } catch (jsonError) {
+      console.error(`Failed to parse JSON response:`, jsonError);
+      return false;
+    }
   } catch (error) {
-    // Log the actual error for debugging
-    console.error(`Backend status check error for ${url}:`, error);
+    // Silently handle network errors when backend is offline
+    // Only log non-network errors in development
+    if (process.env.NODE_ENV === 'development' && error instanceof TypeError && error.message !== 'Failed to fetch') {
+      console.debug(`Backend status check error for ${url}:`, error);
+    }
     return false;
   }
 }
@@ -157,8 +216,12 @@ export async function getInstallables(): Promise<InstallablesResponse> {
       throw new Error(errorData.error || `HTTP error! status: ${response.status}`);
     }
 
-    const data = await response.json();
-    return data;
+    try {
+      const data = await response.json();
+      return data;
+    } catch (jsonError) {
+      throw new Error("Failed to parse response from server");
+    }
   } catch (error) {
     throw error;
   }
@@ -180,8 +243,12 @@ export async function getActiveInstallable(): Promise<{ active: string | null }>
       throw new Error(errorData.error || `HTTP error! status: ${response.status}`);
     }
 
-    const data = await response.json();
-    return data;
+    try {
+      const data = await response.json();
+      return data;
+    } catch (jsonError) {
+      throw new Error("Failed to parse response from server");
+    }
   } catch (error) {
     throw error;
   }
@@ -206,11 +273,18 @@ export async function activateInstallable(name: string): Promise<ApiResponse> {
       };
     }
 
-    const data = await response.json();
-    return {
-      success: true,
-      message: data.message || "Installable activated successfully",
-    };
+    try {
+      const data = await response.json();
+      return {
+        success: true,
+        message: data.message || "Installable activated successfully",
+      };
+    } catch (jsonError) {
+      return {
+        success: false,
+        error: "Failed to parse response from server",
+      };
+    }
   } catch (error) {
     return {
       success: false,
@@ -238,11 +312,18 @@ export async function deactivateInstallable(): Promise<ApiResponse> {
       };
     }
 
-    const data = await response.json();
-    return {
-      success: true,
-      message: data.message || "Installable deactivated successfully",
-    };
+    try {
+      const data = await response.json();
+      return {
+        success: true,
+        message: data.message || "Installable deactivated successfully",
+      };
+    } catch (jsonError) {
+      return {
+        success: false,
+        error: "Failed to parse response from server",
+      };
+    }
   } catch (error) {
     return {
       success: false,
