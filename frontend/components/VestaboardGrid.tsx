@@ -702,10 +702,10 @@ export const VestaboardGrid: React.FC = () => {
       <div className="w-full space-y-6">
         <Card>
         <CardHeader>
-          <div className="flex items-center justify-between">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
             <div className="flex flex-col gap-2">
-              <div className="flex items-center gap-2">
-                <CardTitle>Vestaboard Grid</CardTitle>
+              <div className="flex items-center gap-2 flex-wrap">
+                <CardTitle className="text-lg sm:text-xl">Vestaboard Grid</CardTitle>
                 {backendStatus !== null && (
                   <div className="flex items-center gap-2">
                     <div
@@ -725,7 +725,7 @@ export const VestaboardGrid: React.FC = () => {
                       }
                     />
                     {backendStatus === "quiet-hours" && (
-                      <span className="text-sm text-yellow-600 dark:text-yellow-400 font-medium">
+                      <span className="text-xs sm:text-sm text-yellow-600 dark:text-yellow-400 font-medium">
                         Quiet Hours
                       </span>
                     )}
@@ -736,13 +736,13 @@ export const VestaboardGrid: React.FC = () => {
                 <DialogTrigger asChild>
                   <button
                     type="button"
-                    className="inline-flex items-center text-muted-foreground hover:text-foreground transition-colors"
+                    className="inline-flex items-center text-muted-foreground hover:text-foreground transition-colors w-fit"
                     aria-label="Keyboard shortcuts"
                   >
                     <Info className="h-4 w-4" />
                   </button>
                 </DialogTrigger>
-                <DialogContent>
+                <DialogContent className="max-h-[90vh] overflow-y-auto">
                   <DialogHeader>
                     <DialogTitle>Keyboard Shortcuts</DialogTitle>
                     <DialogDescription>
@@ -862,10 +862,10 @@ export const VestaboardGrid: React.FC = () => {
                 </DialogContent>
               </Dialog>
             </div>
-            <div className="flex gap-2">
+            <div className="flex flex-col sm:flex-row gap-2 sm:items-center">
               {sendStatus.type && (
                 <div
-                  className={`px-3 py-1 rounded text-sm ${
+                  className={`px-3 py-1 rounded text-xs sm:text-sm ${
                     sendStatus.type === "success"
                       ? "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200"
                       : "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200"
@@ -874,55 +874,60 @@ export const VestaboardGrid: React.FC = () => {
                   {sendStatus.message}
                 </div>
               )}
-              {checkForChanges() ? (
-                <Button
-                  onClick={handleSendToVestaboard}
-                  disabled={isSending}
-                  variant="default"
-                >
-                  {isSending ? "Sending..." : "Send to Vestaboard"}
-                </Button>
-              ) : (
-                <Button
-                  disabled
-                  variant="default"
-                >
-                  No changes to send
-                </Button>
-              )}
-              <div className="flex flex-col gap-1">
-                <Button
-                  variant="outline"
-                  onClick={handleRefreshBoard}
-                  disabled={isLoadingBoard || backendStatus !== "online"}
-                >
-                  Refresh Board
-                </Button>
-                {isLoadingBoard && (
-                  <div className="flex justify-center">
-                    <div className="w-4 h-4 border-2 border-muted-foreground border-t-transparent rounded-full animate-spin"></div>
-                  </div>
+              <div className="flex flex-col sm:flex-row gap-2">
+                {checkForChanges() ? (
+                  <Button
+                    onClick={handleSendToVestaboard}
+                    disabled={isSending}
+                    variant="default"
+                    className="text-sm sm:text-base"
+                  >
+                    {isSending ? "Sending..." : "Send to Vestaboard"}
+                  </Button>
+                ) : (
+                  <Button
+                    disabled
+                    variant="default"
+                    className="text-sm sm:text-base"
+                  >
+                    No changes to send
+                  </Button>
                 )}
-                {automatedMessageNotification && (
-                  <p className="text-xs text-muted-foreground max-w-[200px]">
-                    {automatedMessageNotification}
-                  </p>
-                )}
+                <div className="flex flex-col gap-1">
+                  <Button
+                    variant="outline"
+                    onClick={handleRefreshBoard}
+                    disabled={isLoadingBoard || backendStatus !== "online"}
+                    className="text-sm sm:text-base"
+                  >
+                    Refresh Board
+                  </Button>
+                  {isLoadingBoard && (
+                    <div className="flex justify-center">
+                      <div className="w-4 h-4 border-2 border-muted-foreground border-t-transparent rounded-full animate-spin"></div>
+                    </div>
+                  )}
+                  {automatedMessageNotification && (
+                    <p className="text-xs text-muted-foreground max-w-[200px] sm:max-w-none">
+                      {automatedMessageNotification}
+                    </p>
+                  )}
+                </div>
               </div>
             </div>
           </div>
         </CardHeader>
         <CardContent>
-          <div className="w-full overflow-x-auto">
-            <div className="flex gap-4">
+          <div className="w-full overflow-x-auto -mx-4 sm:mx-0 px-4 sm:px-0">
+            <div className="flex flex-col sm:flex-row gap-4">
               {/* Tools Panel */}
-              <div className="flex-shrink-0 w-16 flex flex-col gap-3 items-center">
+              <div className="flex-shrink-0 flex flex-row sm:flex-col gap-3 items-center sm:items-center justify-center sm:justify-start sm:w-16">
                 {/* Tool Buttons */}
-                <div className="flex flex-col gap-2 items-center">
+                <div className="flex flex-row sm:flex-col gap-2 items-center">
                   <Button
                     variant={selectedTool === 'text' ? 'default' : 'outline'}
                     onClick={() => handleToolSelect('text')}
-                    className="w-12 h-12 p-0"
+                    className="w-10 h-10 sm:w-12 sm:h-12 p-0"
                     size="icon"
                     title="Text Tool"
                     aria-label="Text Tool"
@@ -932,7 +937,7 @@ export const VestaboardGrid: React.FC = () => {
                   <Button
                     variant={selectedTool === 'paint' ? 'default' : 'outline'}
                     onClick={() => handleToolSelect('paint')}
-                    className="w-12 h-12 p-0"
+                    className="w-10 h-10 sm:w-12 sm:h-12 p-0"
                     size="icon"
                     title="Paint Tool"
                     aria-label="Paint Tool"
@@ -942,7 +947,7 @@ export const VestaboardGrid: React.FC = () => {
                   <Button
                     variant={selectedTool === 'clear' ? 'default' : 'outline'}
                     onClick={() => handleToolSelect('clear')}
-                    className="w-12 h-12 p-0"
+                    className="w-10 h-10 sm:w-12 sm:h-12 p-0"
                     size="icon"
                     title="Clear Grid"
                     aria-label="Clear Grid"
@@ -953,15 +958,15 @@ export const VestaboardGrid: React.FC = () => {
 
                 {/* Color Palette - shown when paint tool is selected */}
                 {selectedTool === 'paint' && (
-                  <div className="mt-2 flex justify-center">
-                    <div className="grid grid-cols-2 gap-1.5">
+                  <div className="mt-0 sm:mt-2 flex justify-center">
+                    <div className="grid grid-cols-4 sm:grid-cols-2 gap-1.5">
                       {SUPPORTED_COLORS.map((color) => (
                         <button
                           key={color.name}
                           type="button"
                           onClick={() => handleColorSelect(color.name)}
                           className={cn(
-                            "aspect-square rounded border-2 transition-all w-6 h-6",
+                            "aspect-square rounded border-2 transition-all w-7 h-7 sm:w-6 sm:h-6",
                             selectedColor === color.name
                               ? "border-primary scale-110 shadow-md ring-2 ring-primary ring-offset-1"
                               : "border-border hover:border-primary/50",
@@ -983,7 +988,7 @@ export const VestaboardGrid: React.FC = () => {
                         type="button"
                         onClick={() => handleColorSelect(null)}
                           className={cn(
-                            "aspect-square rounded border-2 transition-all w-6 h-6 flex items-center justify-center",
+                            "aspect-square rounded border-2 transition-all w-7 h-7 sm:w-6 sm:h-6 flex items-center justify-center",
                             selectedColor === null
                               ? "border-primary bg-primary text-primary-foreground ring-2 ring-primary ring-offset-1"
                               : "border-border hover:border-primary/50 bg-background"
@@ -999,9 +1004,9 @@ export const VestaboardGrid: React.FC = () => {
               </div>
 
               {/* Grid */}
-              <div className="flex-1">
+              <div className="flex-1 min-w-0">
                 <div
-                  className="inline-grid gap-0.5 p-4 bg-muted/20 rounded-lg"
+                  className="inline-grid gap-0.5 p-2 sm:p-4 bg-muted/20 rounded-lg"
                   style={{
                     gridTemplateColumns: `repeat(${GRID_COLS}, minmax(0, 1fr))`,
                     gridTemplateRows: `repeat(${GRID_ROWS}, minmax(0, 1fr))`,
@@ -1017,7 +1022,7 @@ export const VestaboardGrid: React.FC = () => {
                   return (
                     <div
                       key={getCellId(rowIndex, colIndex)}
-                      className="aspect-square min-w-[2.5rem] min-h-[2.5rem]"
+                      className="aspect-square min-w-[1.75rem] min-h-[1.75rem] sm:min-w-[2.5rem] sm:min-h-[2.5rem]"
                     >
                       <GridCell
                         value={displayValue}

@@ -30,8 +30,9 @@ export function useKeyboardNavigation({
       // Check if we're in a browser environment first
       let isMac = false;
       if (typeof window !== "undefined" && typeof navigator !== "undefined") {
-        // Try modern API first (Chrome/Edge)
-        if (navigator.userAgentData?.platform === "macOS") {
+        // Try modern API first (Chrome/Edge) - cast to any since userAgentData types aren't in TS
+        const nav = navigator as { userAgentData?: { platform?: string } };
+        if (nav.userAgentData?.platform === "macOS") {
           isMac = true;
         } else {
           // Fallback to userAgent string

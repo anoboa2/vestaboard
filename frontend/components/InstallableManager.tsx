@@ -102,15 +102,15 @@ export const InstallableManager: React.FC = () => {
   return (
     <Card>
       <CardHeader>
-        <div className="flex items-center justify-between">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
           <div>
-            <CardTitle>{isAdmin ? "Installables" : "Apps"}</CardTitle>
-            <CardDescription>
+            <CardTitle className="text-lg sm:text-xl">{isAdmin ? "Installables" : "Apps"}</CardTitle>
+            <CardDescription className="text-sm">
               {isAdmin ? "Manage which installable is active on your Vestaboard" : "View available apps"}
             </CardDescription>
           </div>
           {isAdmin && (
-            <span className="px-2.5 py-1 text-xs font-medium rounded-full bg-primary/10 text-primary border border-primary/20">
+            <span className="px-2.5 py-1 text-xs font-medium rounded-full bg-primary/10 text-primary border border-primary/20 w-fit">
               Admin Mode
             </span>
           )}
@@ -118,11 +118,11 @@ export const InstallableManager: React.FC = () => {
       </CardHeader>
       <CardContent>
         {loading && Object.keys(installables).length === 0 ? (
-          <div className="text-center py-8 text-muted-foreground">Loading installables...</div>
+          <div className="text-center py-8 text-muted-foreground text-sm sm:text-base">Loading installables...</div>
         ) : error && Object.keys(installables).length === 0 ? (
-          <div className="text-center py-8 text-destructive">{error}</div>
+          <div className="text-center py-8 text-destructive text-sm sm:text-base">{error}</div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
             {Object.entries(installables).map(([key, installable]) => {
               const isActive = installable.status === "active" || activeName === key;
               return (
@@ -134,24 +134,24 @@ export const InstallableManager: React.FC = () => {
                       : "border-border hover:border-primary/20"
                   }`}
                 >
-                  <div className="flex flex-col h-full p-4 gap-3">
+                  <div className="flex flex-col h-full p-3 sm:p-4 gap-2 sm:gap-3">
                     <div className="flex items-start justify-between gap-2">
                       <div className="flex items-center gap-2 flex-1 min-w-0">
-                        <h3 className="font-semibold text-base leading-tight">{installable.name}</h3>
+                        <h3 className="font-semibold text-sm sm:text-base leading-tight">{installable.name}</h3>
                         {isActive && (
-                          <div className="flex items-center gap-1.5">
+                          <div className="flex items-center gap-1.5 flex-shrink-0">
                             <div
                               className="w-2 h-2 rounded-full bg-green-500 animate-pulse flex-shrink-0"
                               title="Active"
                             />
                             {!isAdmin && (
-                              <span className="text-xs text-muted-foreground font-medium">Active</span>
+                              <span className="text-xs text-muted-foreground font-medium hidden sm:inline">Active</span>
                             )}
                           </div>
                         )}
                       </div>
                     </div>
-                    <p className="text-sm text-muted-foreground leading-relaxed flex-1">
+                    <p className="text-xs sm:text-sm text-muted-foreground leading-relaxed flex-1">
                       {installable.description}
                     </p>
                     {isAdmin && (
@@ -186,7 +186,7 @@ export const InstallableManager: React.FC = () => {
           </div>
         )}
         {error && Object.keys(installables).length > 0 && (
-          <div className="mt-4 p-3 rounded-md bg-destructive/10 text-destructive text-sm">
+          <div className="mt-4 p-3 rounded-md bg-destructive/10 text-destructive text-xs sm:text-sm">
             {error}
           </div>
         )}

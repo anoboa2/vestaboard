@@ -71,3 +71,4 @@ export function decodeGrid(gridCodes: number[][]): DecodedCell[][] {
   return gridCodes.map(decodeCharacterCodes);
 }
 
+

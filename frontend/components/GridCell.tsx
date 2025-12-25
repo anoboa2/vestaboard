@@ -110,13 +110,13 @@ export const GridCell: React.FC<GridCellProps> = ({
     return (
       <div
         className={cn(
-          "w-full h-full text-center text-lg font-mono border rounded transition-all duration-200",
+          "w-full h-full text-center text-sm sm:text-lg font-mono border rounded transition-all duration-200",
           "bg-gray-100 dark:bg-gray-900/50 border-gray-100 dark:border-gray-800/50",
           "flex items-center justify-center",
           // Apply text color to the character if color is set
           textColorClass,
           // Make block character bold and larger for better visibility
-          color && value === "█" ? "font-bold text-2xl" : ""
+          color && value === "█" ? "font-bold text-lg sm:text-2xl" : ""
         )}
         data-row={row}
         data-col={col}
@@ -139,7 +139,7 @@ export const GridCell: React.FC<GridCellProps> = ({
       onClick={handleClick}
       onKeyDown={onKeyDown}
       className={cn(
-        "w-full h-full text-center text-lg font-mono border-2 rounded transition-all duration-200",
+        "w-full h-full text-center text-sm sm:text-lg font-mono border-2 rounded transition-all duration-200",
         "focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-1",
         "bg-background",
         isFocused
@@ -149,7 +149,7 @@ export const GridCell: React.FC<GridCellProps> = ({
         // Apply text color to the character if color is set
         textColorClass,
         // Make block character bold and larger for better visibility
-        color && value === "█" ? "font-bold text-2xl" : ""
+        color && value === "█" ? "font-bold text-lg sm:text-2xl" : ""
       )}
       maxLength={1}
       aria-label={`Cell at row ${row + 1}, column ${col + 1}${color ? `, color: ${color}` : ""}`}
