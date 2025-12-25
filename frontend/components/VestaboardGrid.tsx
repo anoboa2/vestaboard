@@ -824,39 +824,63 @@ export const VestaboardGrid: React.FC = () => {
         <CardHeader className="p-3 sm:p-6">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
             <div className="flex flex-col gap-2">
-              <div className="flex items-center gap-2 flex-wrap">
-                <CardTitle className="text-lg sm:text-xl">Vestaboard Grid</CardTitle>
-                {backendStatus !== null && (
-                  <div className="flex items-center gap-2">
-                    <div
-                      className={`w-2 h-2 rounded-full ${
-                        backendStatus === "online"
-                          ? "bg-green-500 animate-pulse"
-                          : backendStatus === "quiet-hours"
-                          ? "bg-yellow-500"
-                          : "bg-red-500"
-                      }`}
-                      title={
-                        backendStatus === "online"
-                          ? "Backend is online"
-                          : backendStatus === "quiet-hours"
-                          ? "Quiet Hours enabled"
-                          : "Backend is offline"
-                      }
-                    />
-                    {backendStatus === "quiet-hours" && (
-                      <span className="text-xs sm:text-sm text-yellow-600 dark:text-yellow-400 font-medium">
-                        Quiet Hours
-                      </span>
-                    )}
-                  </div>
-                )}
+              <div className="flex items-center gap-2 flex-wrap justify-between sm:justify-start">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <CardTitle className="text-lg sm:text-xl">Alex's Vestaboard</CardTitle>
+                  {backendStatus !== null && (
+                    <div className="flex items-center gap-2">
+                      <div
+                        className={`w-2 h-2 rounded-full ${
+                          backendStatus === "online"
+                            ? "bg-green-500 animate-pulse"
+                            : backendStatus === "quiet-hours"
+                            ? "bg-yellow-500"
+                            : "bg-red-500"
+                        }`}
+                        title={
+                          backendStatus === "online"
+                            ? "Backend is online"
+                            : backendStatus === "quiet-hours"
+                            ? "Quiet Hours enabled"
+                            : "Backend is offline"
+                        }
+                      />
+                      {backendStatus === "quiet-hours" && (
+                        <span className="text-xs sm:text-sm text-yellow-600 dark:text-yellow-400 font-medium">
+                          Quiet Hours
+                        </span>
+                      )}
+                    </div>
+                  )}
+                </div>
+                {/* Refresh and Display Name buttons - visible on mobile in header */}
+                <div className="flex flex-row gap-2 sm:hidden">
+                  <Button
+                    variant="outline"
+                    onClick={handleRefreshBoard}
+                    disabled={isLoadingBoard || backendStatus !== "online"}
+                    className="text-sm"
+                    size="sm"
+                  >
+                    Sync
+                  </Button>
+                  <Button
+                    variant="outline"
+                    onClick={() => setShowEditDisplayNameModal(true)}
+                    className="text-sm"
+                    size="icon"
+                    title="Edit Display Name"
+                    aria-label="Edit Display Name"
+                  >
+                    <User className="h-4 w-4" />
+                  </Button>
+                </div>
               </div>
               <Dialog>
                 <DialogTrigger asChild>
                   <button
                     type="button"
-                    className="inline-flex items-center text-muted-foreground hover:text-foreground transition-colors w-fit"
+                    className="hidden sm:inline-flex items-center text-muted-foreground hover:text-foreground transition-colors w-fit"
                     aria-label="Keyboard shortcuts"
                   >
                     <Info className="h-4 w-4" />
@@ -982,7 +1006,8 @@ export const VestaboardGrid: React.FC = () => {
                 </DialogContent>
               </Dialog>
             </div>
-            <div className="flex flex-col sm:flex-row gap-2 sm:items-center">
+            {/* Desktop: Send button, refresh, and display name in header */}
+            <div className="hidden sm:flex flex-col sm:flex-row gap-2 sm:items-center">
               {sendStatus.type && (
                 <div
                   className={`px-3 py-1 rounded text-xs sm:text-sm ${
@@ -1021,7 +1046,7 @@ export const VestaboardGrid: React.FC = () => {
                       disabled={isLoadingBoard || backendStatus !== "online"}
                       className="text-sm sm:text-base"
                     >
-                      Refresh Board
+                      Sync Board
                     </Button>
                     <Button
                       variant="outline"
@@ -1136,7 +1161,7 @@ export const VestaboardGrid: React.FC = () => {
               </div>
 
               {/* Grid */}
-              <div className="flex-1 min-w-0">
+              <div className="flex-1 min-w-0 relative">
                 <div
                   className="inline-grid gap-0.5 sm:gap-0.5 p-1.5 sm:p-4 bg-muted/20 rounded-lg"
                   style={{
@@ -1152,6 +1177,7 @@ export const VestaboardGrid: React.FC = () => {
                   const cellColor = gridColors[rowIndex]?.[colIndex] || null;
                   // If cell has a color, display '█' instead of the color code name
                   const displayValue = cellColor ? '█' : cell;
+                  const isOffline = backendStatus === "offline";
                   return (
                     <div
                       key={getCellId(rowIndex, colIndex)}
@@ -1173,15 +1199,67 @@ export const VestaboardGrid: React.FC = () => {
                         onMouseEnter={selectedTool === 'paint' ? handleCellMouseEnter(rowIndex, colIndex) : undefined}
                         onMouseUp={selectedTool === 'paint' ? handleCellMouseUp : undefined}
                         onKeyDown={handleKeyDown}
-                        disabled={isDisplayName}
+                        disabled={isDisplayName || isOffline}
                       />
                     </div>
                   );
                 })
               )}
                 </div>
+                {/* Offline Overlay */}
+                {backendStatus === "offline" && (
+                  <div className="absolute inset-0 bg-background/80 dark:bg-background/90 backdrop-blur-xs rounded-lg flex items-center justify-center z-50">
+                    <div className="text-center px-4">
+                      <p className="text-lg sm:text-xl font-semibold text-foreground">
+                        The board is currently offline
+                      </p>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
+          </div>
+          {/* Mobile: Send button and status below the grid */}
+          <div className="sm:hidden mt-4 space-y-2">
+            {sendStatus.type && (
+              <div
+                className={`px-3 py-1 rounded text-xs ${
+                  sendStatus.type === "success"
+                    ? "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200"
+                    : "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200"
+                }`}
+              >
+                {sendStatus.message}
+              </div>
+            )}
+            {checkForChanges() ? (
+              <Button
+                onClick={handleSendToVestaboard}
+                disabled={isSending}
+                variant="default"
+                className="text-sm w-full"
+              >
+                {isSending ? "Sending..." : "Send to Vestaboard"}
+              </Button>
+            ) : (
+              <Button
+                disabled
+                variant="default"
+                className="text-sm w-full"
+              >
+                No changes to send
+              </Button>
+            )}
+            {isLoadingBoard && (
+              <div className="flex justify-center">
+                <div className="w-4 h-4 border-2 border-muted-foreground border-t-transparent rounded-full animate-spin"></div>
+              </div>
+            )}
+            {automatedMessageNotification && (
+              <p className="text-xs text-muted-foreground">
+                {automatedMessageNotification}
+              </p>
+            )}
           </div>
         </CardContent>
       </Card>

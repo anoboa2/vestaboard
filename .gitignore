@@ -8,3 +8,5 @@ tests/*
 .env
 .env.local
 notebook.ipynb
+.vercel
+.env*.local
