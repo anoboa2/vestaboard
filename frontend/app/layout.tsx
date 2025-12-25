@@ -13,8 +13,12 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Vestaboard Grid",
-  description: "Interactive Vestaboard grid editor",
+  title: "Alex's Vestaboard",
+  description: "Leave me a message on my office Vestaboard!",
+  icons: {
+    icon: "/icon.png",
+    apple: "/icon.png"
+  },
 };
 
 export const viewport: Viewport = {

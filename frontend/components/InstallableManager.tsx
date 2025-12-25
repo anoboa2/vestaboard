@@ -106,7 +106,7 @@ export const InstallableManager: React.FC = () => {
           <div>
             <CardTitle className="text-lg sm:text-xl">{isAdmin ? "Installables" : "Apps"}</CardTitle>
             <CardDescription className="text-sm">
-              {isAdmin ? "Manage which installable is active on your Vestaboard" : "View available apps"}
+              {isAdmin ? "Manage which installable is active on your Vestaboard" : "View available apps (can only be changed by an admin)"}
             </CardDescription>
           </div>
           {isAdmin && (
