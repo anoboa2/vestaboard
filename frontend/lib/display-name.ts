@@ -84,20 +84,39 @@ export function hasDisplayName(): boolean {
 }
 
 /**
+ * Clears the display name from localStorage.
+ */
+export function clearDisplayName(): void {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  try {
+    localStorage.removeItem(STORAGE_KEY);
+  } catch (error) {
+    console.error("Error clearing display name from localStorage:", error);
+    throw new Error("Failed to clear display name");
+  }
+}
+
+/**
  * Formats a display name for the bottom row of the vestaboard.
  * Formats as "-{displayName}" (no space) and truncates/pads to fit GRID_COLS (22 characters).
  * Right-aligns the signature to the end of the row.
+ * Converts the display name to uppercase to match grid text styling.
  * 
  * @param displayName - The display name to format
  * @param maxLength - Maximum length for the formatted string (default: 22)
- * @returns Formatted string padded or truncated to maxLength, right-aligned
+ * @returns Formatted string padded or truncated to maxLength, right-aligned, with uppercase display name
  */
 export function formatDisplayNameForRow(displayName: string, maxLength: number = 22): string {
-  const signature = `-${displayName}`;
+  // Convert display name to uppercase
+  const upperDisplayName = displayName.toUpperCase();
+  const signature = `-${upperDisplayName}`;
   
   if (signature.length > maxLength) {
     // Truncate the display name to fit (leave space for "-" prefix)
-    const truncatedName = displayName.substring(0, maxLength - 1);
+    const truncatedName = upperDisplayName.substring(0, maxLength - 1);
     return `-${truncatedName}`;
   }
   

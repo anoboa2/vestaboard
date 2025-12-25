@@ -13,6 +13,9 @@ interface GridCellProps {
   onChange: (value: string) => void;
   onKeyDown: (e: React.KeyboardEvent<HTMLInputElement>) => void;
   onClick?: () => void;
+  onMouseDown?: (e: React.MouseEvent) => void;
+  onMouseEnter?: () => void;
+  onMouseUp?: () => void;
   disabled?: boolean;
 }
 
@@ -39,6 +42,9 @@ export const GridCell: React.FC<GridCellProps> = ({
   onChange,
   onKeyDown,
   onClick,
+  onMouseDown,
+  onMouseEnter,
+  onMouseUp,
   disabled = false,
 }) => {
   const inputRef = useRef<HTMLInputElement>(null);
@@ -63,8 +69,8 @@ export const GridCell: React.FC<GridCellProps> = ({
     if (newValue.length === 0) {
       onChange("");
     } else {
-      // Take the last character to handle both new input and replacement
-      onChange(newValue.slice(-1));
+      // Take the last character and convert to uppercase
+      onChange(newValue.slice(-1).toUpperCase());
     }
   };
 
@@ -76,7 +82,7 @@ export const GridCell: React.FC<GridCellProps> = ({
     e.preventDefault();
     const pastedText = e.clipboardData.getData("text");
     if (pastedText.length > 0) {
-      onChange(pastedText[0]);
+      onChange(pastedText[0].toUpperCase());
     }
   };
 
@@ -86,7 +92,10 @@ export const GridCell: React.FC<GridCellProps> = ({
       e.target.blur();
       return;
     }
-    onFocus();
+    // Only focus if not in paint mode (paint mode uses mouse events)
+    if (!onMouseDown) {
+      onFocus();
+    }
   };
 
   const handleClick = (e: React.MouseEvent<HTMLInputElement>) => {
@@ -110,13 +119,13 @@ export const GridCell: React.FC<GridCellProps> = ({
     return (
       <div
         className={cn(
-          "w-full h-full text-center text-sm sm:text-lg font-mono border rounded transition-all duration-200",
+          "w-full h-full text-center text-xs sm:text-lg font-mono border rounded transition-all duration-200",
           "bg-gray-100 dark:bg-gray-900/50 border-gray-100 dark:border-gray-800/50",
           "flex items-center justify-center",
           // Apply text color to the character if color is set
           textColorClass,
           // Make block character bold and larger for better visibility
-          color && value === "█" ? "font-bold text-lg sm:text-2xl" : ""
+          color && value === "█" ? "font-bold text-sm sm:text-2xl" : ""
         )}
         data-row={row}
         data-col={col}
@@ -137,10 +146,19 @@ export const GridCell: React.FC<GridCellProps> = ({
       onPaste={handlePaste}
       onFocus={handleFocus}
       onClick={handleClick}
+      onMouseDown={(e) => {
+        if (onMouseDown) {
+          onMouseDown(e);
+          // Prevent focus when using paint tool
+          e.preventDefault();
+        }
+      }}
+      onMouseEnter={onMouseEnter}
+      onMouseUp={onMouseUp}
       onKeyDown={onKeyDown}
       className={cn(
-        "w-full h-full text-center text-sm sm:text-lg font-mono border-2 rounded transition-all duration-200",
-        "focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-1",
+        "w-full h-full text-center text-xs sm:text-lg font-mono border sm:border-2 rounded transition-all duration-200",
+        "focus:outline-none focus:ring-1 sm:focus:ring-2 focus:ring-ring focus:ring-offset-0 sm:focus:ring-offset-1",
         "bg-background",
         isFocused
           ? "border-primary scale-105 shadow-md z-10"
@@ -149,8 +167,9 @@ export const GridCell: React.FC<GridCellProps> = ({
         // Apply text color to the character if color is set
         textColorClass,
         // Make block character bold and larger for better visibility
-        color && value === "█" ? "font-bold text-lg sm:text-2xl" : ""
+        color && value === "█" ? "font-bold text-sm sm:text-2xl" : ""
       )}
+      style={{ caretColor: 'transparent', cursor: 'pointer' }}
       maxLength={1}
       aria-label={`Cell at row ${row + 1}, column ${col + 1}${color ? `, color: ${color}` : ""}`}
       data-row={row}

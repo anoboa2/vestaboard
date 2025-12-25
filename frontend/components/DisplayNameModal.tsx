@@ -9,16 +9,22 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { validateDisplayName, setDisplayName } from "@/lib/display-name";
+import { validateDisplayName, setDisplayName, getDisplayName, clearDisplayName } from "@/lib/display-name";
 
 interface DisplayNameModalProps {
   open: boolean;
   onNameSet: (name: string) => void;
+  isEditing?: boolean;
+  onClear?: () => void;
+  onOpenChange?: (open: boolean) => void;
 }
 
 export const DisplayNameModal: React.FC<DisplayNameModalProps> = ({
   open,
   onNameSet,
+  isEditing = false,
+  onClear,
+  onOpenChange,
 }) => {
   const [inputValue, setInputValue] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -28,16 +34,25 @@ export const DisplayNameModal: React.FC<DisplayNameModalProps> = ({
   useEffect(() => {
     if (open && inputRef.current) {
       inputRef.current.focus();
+      // Select all text when editing
+      if (isEditing) {
+        inputRef.current.select();
+      }
     }
-  }, [open]);
+  }, [open, isEditing]);
 
-  // Reset state when modal opens
+  // Reset state when modal opens - pre-fill if editing
   useEffect(() => {
     if (open) {
-      setInputValue("");
+      if (isEditing) {
+        const currentName = getDisplayName();
+        setInputValue(currentName || "");
+      } else {
+        setInputValue("");
+      }
       setError(null);
     }
-  }, [open]);
+  }, [open, isEditing]);
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const value = e.target.value;
@@ -76,16 +91,30 @@ export const DisplayNameModal: React.FC<DisplayNameModalProps> = ({
   const isDisabled = inputValue.trim().length === 0;
 
   return (
-    <Dialog open={open}>
+    <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent 
         className="w-[calc(100vw-2rem)] sm:max-w-md [&>button]:hidden max-h-[90vh] overflow-y-auto"
-        onInteractOutside={(e) => e.preventDefault()} // Prevent closing by clicking outside
-        onEscapeKeyDown={(e) => e.preventDefault()} // Prevent closing with Escape
+        onInteractOutside={(e) => {
+          // Only prevent closing for initial modal (not editing)
+          if (!isEditing) {
+            e.preventDefault();
+          }
+        }}
+        onEscapeKeyDown={(e) => {
+          // Only prevent closing for initial modal (not editing)
+          if (!isEditing) {
+            e.preventDefault();
+          }
+        }}
       >
         <DialogHeader>
-          <DialogTitle className="text-lg sm:text-xl">Welcome! Enter Your Display Name</DialogTitle>
+          <DialogTitle className="text-lg sm:text-xl">
+            {isEditing ? "Edit Display Name" : "Welcome! Enter Your Display Name"}
+          </DialogTitle>
           <DialogDescription className="text-sm">
-            Please enter a display name to continue. This will be shown on your vestaboard messages.
+            {isEditing
+              ? "Update your display name. This will be shown on your vestaboard messages."
+              : "Please enter a display name to continue. This will be shown on your vestaboard messages."}
           </DialogDescription>
         </DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-4">
@@ -108,10 +137,31 @@ export const DisplayNameModal: React.FC<DisplayNameModalProps> = ({
               Up to 20 characters. Allowed: letters, numbers, spaces, hyphens, underscores, and common punctuation.
             </p>
           </div>
-          <div className="flex justify-end">
-            <Button type="submit" disabled={isDisabled} className="w-full sm:w-auto">
-              Continue
-            </Button>
+          <div className="flex justify-between gap-2">
+            {isEditing && onClear && (
+              <Button
+                type="button"
+                variant="destructive"
+                onClick={() => {
+                  try {
+                    clearDisplayName();
+                    if (onClear) {
+                      onClear();
+                    }
+                  } catch (err) {
+                    setError(err instanceof Error ? err.message : "Failed to clear display name");
+                  }
+                }}
+                className="w-full sm:w-auto"
+              >
+                Clear
+              </Button>
+            )}
+            <div className="flex justify-end gap-2 ml-auto">
+              <Button type="submit" disabled={isDisabled} className="w-full sm:w-auto">
+                {isEditing ? "Save" : "Continue"}
+              </Button>
+            </div>
           </div>
         </form>
       </DialogContent>

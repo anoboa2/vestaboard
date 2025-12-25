@@ -16,11 +16,11 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
-import { Info, Type, Paintbrush, Trash2, Eraser } from "lucide-react";
+import { Info, Type, Paintbrush, Trash2, Eraser, User } from "lucide-react";
 import { sendGridToBackend, checkBackendStatus, getCurrentBoard, deactivateInstallable } from "@/lib/api-client";
 import { decodeGrid, type DecodedCell } from "@/lib/vestaboard-codes";
 import { DisplayNameModal } from "./DisplayNameModal";
-import { hasDisplayName, getDisplayName, formatDisplayNameForRow, isDisplayNameCell } from "@/lib/display-name";
+import { hasDisplayName, getDisplayName, formatDisplayNameForRow, isDisplayNameCell, clearDisplayName } from "@/lib/display-name";
 
 // Supported colors for paint tool
 const SUPPORTED_COLORS = [
@@ -69,10 +69,15 @@ export const VestaboardGrid: React.FC = () => {
   const [hasUserEdits, setHasUserEdits] = useState(false);
   const [automatedMessageNotification, setAutomatedMessageNotification] = useState<string | null>(null);
   const [showDisplayNameModal, setShowDisplayNameModal] = useState(false);
+  const [showEditDisplayNameModal, setShowEditDisplayNameModal] = useState(false);
   const [selectedTool, setSelectedTool] = useState<'text' | 'paint' | 'clear'>('text');
   const [selectedColor, setSelectedColor] = useState<string | null>(null);
-
+  const [isDragging, setIsDragging] = useState(false);
+  const [paintedCellsDuringDrag, setPaintedCellsDuringDrag] = useState<Set<string>>(new Set());
+  
   // Refs to track current state values without creating dependency cycles
+  const isDraggingRef = useRef(false);
+  const paintedCellsRef = useRef<Set<string>>(new Set());
   const gridRef = useRef(grid);
   const gridColorsRef = useRef(gridColors);
   const lastSyncedBoardRef = useRef(lastSyncedBoard);
@@ -202,23 +207,28 @@ export const VestaboardGrid: React.FC = () => {
           loadedColors.push(finalRow.map(cell => cell.color || null));
         }
         
+        // Convert all text to uppercase (preserve spaces and special characters)
+        const uppercasedGrid = loadedGrid.map(row => 
+          row.map(char => char === ' ' || char === '█' ? char : char.toUpperCase())
+        );
+        
         if (process.env.NODE_ENV === 'development') {
-          console.debug("Decoded grid with colors:", loadedGrid);
+          console.debug("Decoded grid with colors:", uppercasedGrid);
         }
         
         // Detect automated updates before updating state
-        detectAutomatedUpdate(loadedGrid, loadedColors);
+        detectAutomatedUpdate(uppercasedGrid, loadedColors);
         
         // Only auto-sync if user hasn't edited recently (existing behavior)
         const timeSinceLastEdit = lastEditTimeRef.current ? Date.now() - lastEditTimeRef.current : Infinity;
         if (timeSinceLastEdit > 30000) {
-          setGrid(loadedGrid);
+          setGrid(uppercasedGrid);
           setGridColors(loadedColors);
           setHasUserEdits(false);
         }
         
         // Always update synced state to track physical board
-        setLastSyncedBoard(loadedGrid.map(row => [...row]));
+        setLastSyncedBoard(uppercasedGrid.map(row => [...row]));
         setLastSyncedColors(loadedColors.map(row => [...row]));
       } else if (result.success && result.grid && Array.isArray(result.grid)) {
         // Fallback to plain grid (backward compatibility)
@@ -236,26 +246,32 @@ export const VestaboardGrid: React.FC = () => {
           // Truncate if longer
           loadedGrid.push(paddedRow.slice(0, GRID_COLS));
         }
+        
+        // Convert all text to uppercase (preserve spaces and special characters)
+        const uppercasedGrid = loadedGrid.map(row => 
+          row.map(char => char === ' ' || char === '█' ? char : char.toUpperCase())
+        );
+        
         if (process.env.NODE_ENV === 'development') {
-          console.debug("Setting grid (no colors):", loadedGrid);
+          console.debug("Setting grid (no colors):", uppercasedGrid);
         }
         
         // Clear colors when using fallback
         const emptyColors = Array(GRID_ROWS).fill(null).map(() => Array(GRID_COLS).fill(null));
         
         // Detect automated updates before updating state
-        detectAutomatedUpdate(loadedGrid, emptyColors);
+        detectAutomatedUpdate(uppercasedGrid, emptyColors);
         
         // Only auto-sync if user hasn't edited recently (existing behavior)
         const timeSinceLastEdit = lastEditTimeRef.current ? Date.now() - lastEditTimeRef.current : Infinity;
         if (timeSinceLastEdit > 30000) {
-          setGrid(loadedGrid);
+          setGrid(uppercasedGrid);
           setGridColors(emptyColors);
           setHasUserEdits(false);
         }
         
         // Always update synced state to track physical board
-        setLastSyncedBoard(loadedGrid.map(row => [...row]));
+        setLastSyncedBoard(uppercasedGrid.map(row => [...row]));
         setLastSyncedColors(emptyColors.map(row => [...row]));
       } else {
         // Only warn in development mode
@@ -286,7 +302,8 @@ export const VestaboardGrid: React.FC = () => {
     
     setGrid((prev) => {
       const newGrid = prev.map((r) => [...r]);
-      newGrid[row][col] = value;
+      // Convert to uppercase, but preserve spaces and special characters
+      newGrid[row][col] = value === " " ? " " : value.toUpperCase();
       return newGrid;
     });
     // Track when user last edited to prevent auto-refresh from overwriting edits
@@ -405,6 +422,75 @@ export const VestaboardGrid: React.FC = () => {
     },
     [selectedTool, paintCell]
   );
+
+  // Handle mouse down to start drag painting
+  const handleCellMouseDown = useCallback(
+    (row: number, col: number) => (e: React.MouseEvent) => {
+      if (selectedTool === 'paint') {
+        e.preventDefault(); // Prevent text selection
+        isDraggingRef.current = true;
+        paintedCellsRef.current = new Set();
+        setIsDragging(true);
+        setPaintedCellsDuringDrag(new Set());
+        // Paint the initial cell
+        paintCell(row, col);
+        paintedCellsRef.current.add(`${row}-${col}`);
+      }
+    },
+    [selectedTool, paintCell]
+  );
+
+  // Handle mouse enter during drag to paint cells
+  const handleCellMouseEnter = useCallback(
+    (row: number, col: number) => () => {
+      if (selectedTool === 'paint' && isDraggingRef.current) {
+        const cellKey = `${row}-${col}`;
+        // Only paint if we haven't painted this cell during this drag
+        if (!paintedCellsRef.current.has(cellKey)) {
+          paintCell(row, col);
+          paintedCellsRef.current.add(cellKey);
+        }
+      }
+    },
+    [selectedTool, paintCell]
+  );
+
+  // Handle mouse up to stop drag painting
+  const handleCellMouseUp = useCallback(() => {
+    if (isDraggingRef.current) {
+      isDraggingRef.current = false;
+      paintedCellsRef.current = new Set();
+      setIsDragging(false);
+      setPaintedCellsDuringDrag(new Set());
+    }
+  }, []);
+
+  // Handle mouse leave from grid container to stop drag
+  const handleGridMouseLeave = useCallback(() => {
+    if (isDraggingRef.current) {
+      isDraggingRef.current = false;
+      paintedCellsRef.current = new Set();
+      setIsDragging(false);
+      setPaintedCellsDuringDrag(new Set());
+    }
+  }, []);
+
+  // Global mouse up handler to stop dragging if mouse leaves window
+  useEffect(() => {
+    const handleGlobalMouseUp = () => {
+      if (isDraggingRef.current) {
+        isDraggingRef.current = false;
+        paintedCellsRef.current = new Set();
+        setIsDragging(false);
+        setPaintedCellsDuringDrag(new Set());
+      }
+    };
+
+    window.addEventListener('mouseup', handleGlobalMouseUp);
+    return () => {
+      window.removeEventListener('mouseup', handleGlobalMouseUp);
+    };
+  }, []);
 
   const handleCellFocus = useCallback(
     (row: number, col: number) => () => {
@@ -624,6 +710,7 @@ export const VestaboardGrid: React.FC = () => {
   // Handle display name being set
   const handleDisplayNameSet = useCallback((name: string) => {
     setShowDisplayNameModal(false);
+    setShowEditDisplayNameModal(false);
     // Update the bottom row with the display name
     const bottomRowIndex = GRID_ROWS - 1;
     const formattedName = formatDisplayNameForRow(name, GRID_COLS);
@@ -632,6 +719,31 @@ export const VestaboardGrid: React.FC = () => {
       newGrid[bottomRowIndex] = formattedName.split("").slice(0, GRID_COLS);
       return newGrid;
     });
+  }, []);
+
+  // Handle display name being cleared
+  const handleDisplayNameCleared = useCallback(() => {
+    // Get display name before clearing
+    const displayName = getDisplayName();
+    // Clear from storage
+    clearDisplayName();
+    setShowEditDisplayNameModal(false);
+    // Clear the display name cells on the bottom row
+    const bottomRowIndex = GRID_ROWS - 1;
+    setGrid((prev) => {
+      const newGrid = prev.map((r) => [...r]);
+      // Clear only the cells that were part of the display name
+      if (displayName) {
+        const signature = `-${displayName}`;
+        const signatureStart = GRID_COLS - signature.length;
+        for (let i = signatureStart; i < GRID_COLS; i++) {
+          newGrid[bottomRowIndex][i] = " ";
+        }
+      }
+      return newGrid;
+    });
+    // Show the initial modal again since display name is required
+    setShowDisplayNameModal(true);
   }, []);
 
   // Sync display name to grid whenever it changes (e.g., after load or when display name is set)
@@ -652,7 +764,7 @@ export const VestaboardGrid: React.FC = () => {
         return newGrid;
       });
     }
-  }, [showDisplayNameModal]); // Run when modal closes (display name is set)
+  }, [showDisplayNameModal, showEditDisplayNameModal]); // Run when modal closes (display name is set)
 
   // Check backend status and load current board on mount
   useEffect(() => {
@@ -698,10 +810,18 @@ export const VestaboardGrid: React.FC = () => {
       <DisplayNameModal
         open={showDisplayNameModal}
         onNameSet={handleDisplayNameSet}
+        isEditing={false}
+      />
+      <DisplayNameModal
+        open={showEditDisplayNameModal}
+        onNameSet={handleDisplayNameSet}
+        isEditing={true}
+        onClear={handleDisplayNameCleared}
+        onOpenChange={setShowEditDisplayNameModal}
       />
       <div className="w-full space-y-6">
         <Card>
-        <CardHeader>
+        <CardHeader className="p-3 sm:p-6">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
             <div className="flex flex-col gap-2">
               <div className="flex items-center gap-2 flex-wrap">
@@ -894,14 +1014,26 @@ export const VestaboardGrid: React.FC = () => {
                   </Button>
                 )}
                 <div className="flex flex-col gap-1">
-                  <Button
-                    variant="outline"
-                    onClick={handleRefreshBoard}
-                    disabled={isLoadingBoard || backendStatus !== "online"}
-                    className="text-sm sm:text-base"
-                  >
-                    Refresh Board
-                  </Button>
+                  <div className="flex flex-row gap-2">
+                    <Button
+                      variant="outline"
+                      onClick={handleRefreshBoard}
+                      disabled={isLoadingBoard || backendStatus !== "online"}
+                      className="text-sm sm:text-base"
+                    >
+                      Refresh Board
+                    </Button>
+                    <Button
+                      variant="outline"
+                      onClick={() => setShowEditDisplayNameModal(true)}
+                      className="text-sm sm:text-base"
+                      size="icon"
+                      title="Edit Display Name"
+                      aria-label="Edit Display Name"
+                    >
+                      <User className="h-4 w-4" />
+                    </Button>
+                  </div>
                   {isLoadingBoard && (
                     <div className="flex justify-center">
                       <div className="w-4 h-4 border-2 border-muted-foreground border-t-transparent rounded-full animate-spin"></div>
@@ -917,8 +1049,8 @@ export const VestaboardGrid: React.FC = () => {
             </div>
           </div>
         </CardHeader>
-        <CardContent>
-          <div className="w-full overflow-x-auto -mx-4 sm:mx-0 px-4 sm:px-0">
+        <CardContent className="p-2 sm:p-6 sm:pt-0">
+          <div className="w-full overflow-x-auto -mx-2 sm:mx-0 px-2 sm:px-0">
             <div className="flex flex-col sm:flex-row gap-4">
               {/* Tools Panel */}
               <div className="flex-shrink-0 flex flex-row sm:flex-col gap-3 items-center sm:items-center justify-center sm:justify-start sm:w-16">
@@ -1006,11 +1138,12 @@ export const VestaboardGrid: React.FC = () => {
               {/* Grid */}
               <div className="flex-1 min-w-0">
                 <div
-                  className="inline-grid gap-0.5 p-2 sm:p-4 bg-muted/20 rounded-lg"
+                  className="inline-grid gap-0.5 sm:gap-0.5 p-1.5 sm:p-4 bg-muted/20 rounded-lg"
                   style={{
                     gridTemplateColumns: `repeat(${GRID_COLS}, minmax(0, 1fr))`,
                     gridTemplateRows: `repeat(${GRID_ROWS}, minmax(0, 1fr))`,
                   }}
+                  onMouseLeave={handleGridMouseLeave}
                 >
               {grid.map((row, rowIndex) =>
                 row.map((cell, colIndex) => {
@@ -1022,7 +1155,7 @@ export const VestaboardGrid: React.FC = () => {
                   return (
                     <div
                       key={getCellId(rowIndex, colIndex)}
-                      className="aspect-square min-w-[1.75rem] min-h-[1.75rem] sm:min-w-[2.5rem] sm:min-h-[2.5rem]"
+                      className="aspect-square min-w-[1.25rem] min-h-[1.25rem] sm:min-w-[2.5rem] sm:min-h-[2.5rem]"
                     >
                       <GridCell
                         value={displayValue}
@@ -1036,6 +1169,9 @@ export const VestaboardGrid: React.FC = () => {
                         onFocus={handleCellFocus(rowIndex, colIndex)}
                         onChange={handleCellChange(rowIndex, colIndex)}
                         onClick={selectedTool === 'paint' ? handleCellClick(rowIndex, colIndex) : undefined}
+                        onMouseDown={selectedTool === 'paint' ? handleCellMouseDown(rowIndex, colIndex) : undefined}
+                        onMouseEnter={selectedTool === 'paint' ? handleCellMouseEnter(rowIndex, colIndex) : undefined}
+                        onMouseUp={selectedTool === 'paint' ? handleCellMouseUp : undefined}
                         onKeyDown={handleKeyDown}
                         disabled={isDisplayName}
                       />
